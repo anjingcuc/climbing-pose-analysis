@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="zh-CN" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      @font-face { font-family: "Microsoft YaHei"; src: local("Microsoft YaHei"); }
+      @font-face { font-family: "PingFang SC"; src: local("PingFang SC"); }
+      html, body { margin: 0; width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+      body { font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif; }
+      .num { font-family: "Consolas", "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+
+      /* ---------- top HUD (from POSE_START) ---------- */
+      #hud-top {
+        position: absolute; top: 28px; left: 28px; right: 28px;
+        display: flex; flex-direction: column; gap: 12px; align-items: flex-start;
+      }
+      .hud-row { display: flex; gap: 12px; align-items: center; }
+      .pill {
+        display: flex; align-items: center; gap: 10px;
+        padding: 9px 20px; border-radius: 999px;
+        background: rgba(10, 16, 24, 0.78); border: 1px solid rgba(255, 255, 255, 0.12);
+        backdrop-filter: blur(6px);
+      }
+      #state-dot { width: 13px; height: 13px; border-radius: 50%; background: #9aa3ad; }
+      #state-txt { font-size: 24px; font-weight: 700; color: #eef4fa; letter-spacing: 2px; }
+      #state-sub { font-size: 13px; color: #a9b9c8; letter-spacing: 1px; }
+      #clock { font-size: 21px; color: #cfe1ee; }
+      .chip-row { display: flex; gap: 6px; }
+      .chip {
+        font-size: 14px; color: #dfe5ea; border: 1px solid rgba(255,255,255,0.14);
+        padding: 4px 12px; border-radius: 6px; background: rgba(10,16,24,0.78);
+      }
+      .chip.on { color: #0b1218; background: #ffd35c; border-color: #ffd35c; font-weight: 700; }
+
+      /* ---------- technique badges (follow the climber) ---------- */
+      #tech-follow {
+        position: absolute; left: 0; top: 0;
+        display: flex; flex-direction: column; gap: 14px; align-items: center;
+        transform: translateX(-50%);
+      }
+      .tech-pill {
+        display: flex; align-items: center; gap: 12px;
+        padding: 10px 26px; border-radius: 999px;
+        background: rgba(10, 16, 24, 0.85); border: 2px solid rgba(255,255,255,0.18);
+        backdrop-filter: blur(6px);
+      }
+      .tech-dot { width: 15px; height: 15px; border-radius: 50%; background: #9aa3ad; }
+      .tech-txt { font-size: 31px; font-weight: 800; color: #f2f7fb; letter-spacing: 3px; }
+      #tech-flash-inner {
+        display: flex; align-items: center; gap: 14px; white-space: nowrap;
+        padding: 16px 34px; border-radius: 16px;
+        background: rgba(12, 20, 30, 0.92); border: 2px solid rgba(255,255,255,0.22);
+      }
+      #tech-flash-txt { font-size: 38px; font-weight: 800; color: #f8fcfe; letter-spacing: 4px; }
+
+      /* ---------- transfer badge ---------- */
+      .evcap { position: absolute; left: 50%; top: 190px; transform: translateX(-50%); }
+      .ev-inner {
+        display: flex; align-items: center; gap: 12px; white-space: nowrap;
+        padding: 10px 20px; border-radius: 12px;
+        background: rgba(12, 20, 30, 0.88); border: 1px solid rgba(92, 255, 138, 0.45);
+      }
+      .ev-mark { width: 10px; height: 10px; border-radius: 50%; background: #5cff8a; box-shadow: 0 0 12px #5cff8a; }
+      .ev-txt { font-size: 21px; font-weight: 700; color: #f2f8fc; letter-spacing: 1px; }
+      .ev-sub { font-size: 14px; color: #b6c6d5; letter-spacing: 1px; }
+
+      /* ---------- captions ---------- */
+      .cap {
+        position: absolute; left: 50%; bottom: 210px; transform: translateX(-50%);
+        width: 940px; text-align: center;
+        padding: 20px 30px; border-radius: 16px;
+        background: rgba(8, 13, 20, 0.74); border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .cap-txt {
+        font-size: 34px; font-weight: 600; color: #f4f8fb; line-height: 1.5;
+        letter-spacing: 1px;
+      }
+      .cap-txt .term { color: #5cff8a; font-weight: 800; }
+
+      /* ---------- intro title panel (local, visible at frame 1) ---------- */
+      #title-bar {
+        position: absolute; left: 50%; top: 150px; transform: translateX(-50%);
+        width: 930px; text-align: center;
+        padding: 30px 36px 26px; border-radius: 20px;
+        background: rgba(8, 13, 20, 0.78); border: 1px solid rgba(255,255,255,0.12);
+        backdrop-filter: blur(8px);
+      }
+      #title-bar .t-main { font-size: 54px; margin: 12px 0 8px; }
+      #title-bar .t-sub { font-size: 24px; }
+      #title-bar .legend-grid {
+        display: flex; justify-content: center; gap: 40px; margin-top: 26px;
+      }
+
+      /* ---------- title / summary cards ---------- */
+      .card {
+        position: absolute; left: 0; right: 0; top: 0; bottom: 0;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: rgba(6, 10, 16, 0.92);
+      }
+      .t-kicker { font-size: 20px; letter-spacing: 8px; color: #7fd8ff; font-weight: 600; }
+      .t-main { font-size: 62px; font-weight: 800; color: #f5fafd; letter-spacing: 5px; margin: 18px 0 10px; }
+      .t-sub { font-size: 22px; color: #b9c9d8; letter-spacing: 2px; }
+      .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 60px; margin-top: 48px; }
+      .legend { display: flex; align-items: center; gap: 12px; font-size: 19px; color: #cfdeea; }
+      .lg-sk { width: 30px; height: 4px; background: #3ce0ff; border-radius: 2px; opacity: 0.55; }
+      .lg-com { width: 14px; height: 14px; border-radius: 50%; background: #5cff8a; }
+      .lg-tri { width: 0; height: 0; border-left: 9px solid transparent; border-right: 9px solid transparent; border-bottom: 16px solid rgba(92,255,138,0.8); }
+      .lg-ct { width: 14px; height: 14px; border-radius: 50%; border: 3px solid #ff5c5c; }
+
+      .s-grid { display: flex; gap: 40px; margin-top: 44px; }
+      .s-item { display: flex; flex-direction: column; align-items: center; }
+      .s-val { font-size: 52px; font-weight: 800; color: #5cff8a; }
+      .s-cap { font-size: 16px; color: #bccbdd; letter-spacing: 2px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="{{DURATION}}"
+      data-width="1080"
+      data-height="1920"
+      data-fps="30"
+    >
+      <video
+        id="a-roll"
+        class="clip"
+        src="{{VIDEO}}"
+        muted
+        playsinline
+        data-start="0"
+        data-duration="{{DURATION}}"
+        data-track-index="0"
+        style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain"
+      ></video>
+      <audio
+        id="a-roll-audio"
+        src="{{VIDEO}}"
+        data-start="0"
+        data-duration="{{AUDIO_DUR}}"
+        data-track-index="1"
+        data-volume="1"
+      ></audio>
+
+      <div id="overlay-svg" class="clip" data-layout-allow-overflow data-start="{{POSE_T0_PRE}}" data-duration="{{POSE_DUR}}" data-track-index="2"
+           style="position: absolute; inset: 0">
+        <svg id="ov" width="1080" height="1920" viewBox="0 0 1080 1920" style="position:absolute;inset:0"></svg>
+      </div>
+
+      <div id="hud-top" class="clip" data-start="{{POSE_T0_PRE}}" data-duration="{{POSE_DUR}}" data-track-index="3">
+        <div class="hud-row">
+          <div class="pill">
+            <div id="state-dot"></div>
+            <div id="state-txt">姿态追踪</div>
+            <div id="state-sub">STATE</div>
+          </div>
+          <div class="pill"><div id="clock" class="num">00:00.0</div></div>
+        </div>
+        <div class="chip-row">
+          <div class="chip" id="chip-lh">左手</div>
+          <div class="chip" id="chip-rh">右手</div>
+          <div class="chip" id="chip-lf">左脚</div>
+          <div class="chip" id="chip-rf">右脚</div>
+        </div>
+      </div>
+
+      <div id="tech-follow" class="clip" data-start="{{POSE_T0_PRE}}" data-duration="{{POSE_DUR}}" data-track-index="9">
+        <div id="tech-flash-inner" style="opacity: 0"><div id="tech-flash-dot" class="tech-dot" style="width:18px;height:18px"></div><div id="tech-flash-txt"></div></div>
+        <div id="tech-slot-0" class="tech-pill" style="opacity: 0"><div id="tech-dot-0" class="tech-dot"></div><div id="tech-txt-0" class="tech-txt"></div></div>
+        <div id="tech-slot-1" class="tech-pill" style="opacity: 0"><div id="tech-dot-1" class="tech-dot"></div><div id="tech-txt-1" class="tech-txt"></div></div>
+      </div>
+
+      <div id="title-bar" class="clip" data-start="0" data-duration="4.6" data-track-index="5">
+        <div id="tc-kicker" class="t-kicker">CLIMBING TUTORIAL ANALYSIS</div>
+        <div id="tc-main" class="t-main">{{TITLE_MAIN}}</div>
+        <div id="tc-sub" class="t-sub">{{TITLE_SUB}}</div>
+        <div id="tc-legend" class="legend-grid">
+          <div class="legend"><span class="lg-sk"></span>姿态骨架</div>
+          <div class="legend"><span class="lg-com"></span>重心 + 轨迹</div>
+          <div class="legend"><span class="lg-tri"></span>支撑三角</div>
+          <div class="legend"><span class="lg-ct"></span>接触点</div>
+        </div>
+      </div>
+
+      <div id="summary-card" class="clip card" data-start="{{SUM_T0}}" data-duration="{{SUM_DUR}}" data-track-index="6">
+        <div id="sc-kicker" class="t-kicker">SESSION DATA</div>
+        <div id="sc-main" class="t-main" style="font-size:52px">讲解段数据小结</div>
+        <div class="s-grid">
+          <div class="s-item"><div id="sv-3pt" class="s-val num">0</div><div class="s-cap">技术动作次数</div></div>
+          <div class="s-item"><div id="sv-ev" class="s-val num">0</div><div class="s-cap">技术种类</div></div>
+          <div class="s-item"><div id="sv-bd" class="s-val num">0</div><div class="s-cap">重心转移次数</div></div>
+        </div>
+      </div>
+
+      {{CAPTION_CLIPS}}
+      {{EVENT_CLIPS}}
+    </div>
+
+    <script src="data.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const D = window.__CLIMB_DATA;
+      const FPS = D.fps, N = D.frames.length;
+      const POSE_T0 = D.pose_t0, DUR = {{DURATION}};
+      const VW = 1080, VH = 1920;
+      const SVGNS = "http://www.w3.org/2000/svg";
+      const ov = document.getElementById("ov");
+
+      const BONES = [[5,6],[5,7],[7,9],[6,8],[8,10],[5,11],[6,12],[11,12],[11,13],[13,15],[12,14],[14,16]];
+      const CONTACTS = [["lh",9],["rh",10],["lf",15],["rf",16]];
+      const STATE_TXT = { "4pt":"四点支撑","3pt":"三点平衡","2pt":"两点·动态","1pt":"移动中","idle":"休息" };
+      const STATE_CLR = { "4pt":"#ffd35c","3pt":"#5cff8a","2pt":"#3ce0ff","1pt":"#ff5c5c","idle":"#9aa3ad" };
+
+      function el(tag, attrs, parent) {
+        const e = document.createElementNS(SVGNS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        (parent || ov).appendChild(e);
+        return e;
+      }
+
+      /* overlay elements (no joint-angle layer in tutorial mode) */
+      const tri = el("polygon", { fill: "rgba(92,255,138,0.16)", stroke: "rgba(92,255,138,0.95)",
+        "stroke-width": 4.5, "stroke-dasharray": "12 8", points: "", opacity: 0 });
+      const trail = el("polyline", { fill: "none", stroke: "rgba(92,255,138,0.75)",
+        "stroke-width": 3.5, "stroke-linecap": "round", points: "" });
+      const plumb = el("line", { stroke: "rgba(92,255,138,0.35)", "stroke-width": 2,
+        "stroke-dasharray": "4 6" });
+      const bones = BONES.map(() => el("line", { stroke: "#3ce0ff", "stroke-width": 3.2,
+        "stroke-linecap": "round", opacity: 0.38 }));
+      const joints = Array.from({ length: 17 }, () => el("circle", { r: 5, fill: "#fff",
+        opacity: 0.55, stroke: "#0891b2", "stroke-width": 1.5, cx: -99, cy: -99 }));
+      const rings = CONTACTS.map(() => el("circle", { r: 17, fill: "none", stroke: "#ff5c5c",
+        "stroke-width": 4, cx: -99, cy: -99, opacity: 0 }));
+      const comG = el("g", {});
+      const comHalo = el("circle", { r: 30, fill: "#5cff8a", opacity: 0.16, cx: -99, cy: -99 }, comG);
+      const comRing = el("circle", { r: 13, fill: "#5cff8a", stroke: "#fff",
+        "stroke-width": 3, cx: -99, cy: -99 }, comG);
+      const comCross1 = el("line", { stroke: "#fff", "stroke-width": 2, opacity: 0.9 }, comG);
+      const comCross2 = el("line", { stroke: "#fff", "stroke-width": 2, opacity: 0.9 }, comG);
+
+      const $ = (id) => document.getElementById(id);
+      const hudEls = {
+        dot: $("state-dot"), txt: $("state-txt"), sub: $("state-sub"), clock: $("clock"),
+        chips: { lh: $("chip-lh"), rh: $("chip-rh"), lf: $("chip-lf"), rf: $("chip-rf") }
+      };
+
+      let lastState = null;
+      function draw() {
+        const t = Math.max(0, Math.min(DUR - 0.001, proxy.t));
+        const fade = Math.max(0, Math.min(1, (t - POSE_T0) / 1.2));
+        const fi = Math.min(N - 1, Math.max(0, Math.round((t - POSE_T0) * FPS)));
+        const f = D.frames[fi];
+        const K = f.kpts;
+
+        /* skeleton */
+        BONES.forEach(([a, b], i) => {
+          const pa = K[a], pb = K[b];
+          bones[i].setAttribute("opacity", (pa && pb) ? 0.38 * fade : 0);
+          if (pa && pb) {
+            bones[i].setAttribute("x1", pa[0]); bones[i].setAttribute("y1", pa[1]);
+            bones[i].setAttribute("x2", pb[0]); bones[i].setAttribute("y2", pb[1]);
+          }
+        });
+        joints.forEach((j, i) => {
+          if (K[i] && fade > 0) { j.setAttribute("cx", K[i][0]); j.setAttribute("cy", K[i][1]); j.setAttribute("opacity", 0.55 * fade); }
+          else { j.setAttribute("cx", -99); j.setAttribute("opacity", 0); }
+        });
+
+        /* contact rings — tiered, three support points dominate in 3pt */
+        CONTACTS.forEach(([nm, jIdx], i) => {
+          const k = K[jIdx];
+          const on = f.contacts && f.contacts[nm];
+          if (on && k && fade > 0) {
+            rings[i].setAttribute("cx", k[0]); rings[i].setAttribute("cy", k[1]);
+            if (f.state === "3pt") {
+              const pulse = 1 + 0.14 * Math.sin((t * 2 * Math.PI * 0.8) % (2 * Math.PI));
+              rings[i].setAttribute("r", 20 * pulse);
+              rings[i].setAttribute("stroke", "#5cff8a");
+              rings[i].setAttribute("stroke-width", 5);
+              rings[i].setAttribute("opacity", 0.95 * fade);
+            } else {
+              rings[i].setAttribute("r", 14);
+              rings[i].setAttribute("stroke", "#ff5c5c");
+              rings[i].setAttribute("stroke-width", 3);
+              rings[i].setAttribute("opacity", 0.45 * fade);
+            }
+          } else if (k && f.state === "3pt" && fade > 0) {
+            rings[i].setAttribute("cx", k[0]); rings[i].setAttribute("cy", k[1]);
+            rings[i].setAttribute("r", 9);
+            rings[i].setAttribute("stroke", "rgba(255,255,255,0.45)");
+            rings[i].setAttribute("stroke-width", 1.5);
+            rings[i].setAttribute("opacity", 0.3 * fade);
+          } else rings[i].setAttribute("opacity", 0);
+        });
+
+        /* support triangle */
+        const cps = CONTACTS.filter(([nm]) => f.contacts && f.contacts[nm]).map(([, j]) => K[j]).filter(Boolean);
+        if ((f.state === "3pt" || f.state === "4pt") && cps.length >= 3) {
+          tri.setAttribute("points", cps.slice(0, 3).map(p => p[0] + "," + p[1]).join(" "));
+          const age = Math.min(1, Math.max(0, (t - POSE_T0 - 0.6 - f.st_t0) / 0.5));
+          tri.setAttribute("opacity", (0.35 + 0.65 * age) * fade);
+        } else tri.setAttribute("opacity", 0);
+
+        /* CoM + trail + plumb */
+        if (f.com && fade > 0) {
+          const cx = f.com[0], cy = f.com[1];
+          const pulse = 1 + 0.1 * Math.sin((t * 2 * Math.PI * 1.1) % (2 * Math.PI));
+          comHalo.setAttribute("cx", cx); comHalo.setAttribute("cy", cy);
+          comHalo.setAttribute("r", 32 * pulse); comHalo.setAttribute("opacity", 0.16 * fade);
+          comRing.setAttribute("cx", cx); comRing.setAttribute("cy", cy);
+          comRing.setAttribute("r", 13 * pulse); comRing.setAttribute("opacity", fade);
+          comRing.setAttribute("fill", f.inside === false ? "#ff9a5c" : "#5cff8a");
+          comCross1.setAttribute("x1", cx - 20); comCross1.setAttribute("y1", cy);
+          comCross1.setAttribute("x2", cx + 20); comCross1.setAttribute("y2", cy);
+          comCross2.setAttribute("x1", cx); comCross2.setAttribute("y1", cy - 20);
+          comCross2.setAttribute("x2", cx); comCross2.setAttribute("y2", cy + 20);
+          plumb.setAttribute("x1", cx); plumb.setAttribute("y1", cy + 16);
+          plumb.setAttribute("x2", cx); plumb.setAttribute("y2", 1590);
+          plumb.setAttribute("opacity", fade);
+          const t0 = Math.max(0, fi - Math.round(2.5 * FPS));
+          let pts = "";
+          for (let i = t0; i <= fi; i++) {
+            const cm = D.frames[i].com;
+            if (cm) pts += (pts ? " " : "") + cm[0].toFixed(1) + "," + cm[1].toFixed(1);
+          }
+          trail.setAttribute("points", pts); trail.setAttribute("opacity", fade);
+        } else {
+          comRing.setAttribute("cx", -99); comHalo.setAttribute("cx", -99);
+          comRing.setAttribute("opacity", 0); comHalo.setAttribute("opacity", 0);
+          trail.setAttribute("points", ""); plumb.setAttribute("opacity", 0);
+        }
+
+        /* technique badges (data-driven, pose window only) */
+        const TECH = D.tech || { phases: [], events: [] };
+        const TECH_TXT = { side_on: "侧身", heel_hook: "挂脚", flagging: "旗式",
+          cross_feet: "交叉脚", match_hands: "并手", straight_arm: "直臂休息",
+          high_step: "高脚", foot_swap: "换脚", cross_hands: "交叉手",
+          rock_over: "压重心", drop_knee: "内扣膝", lock_off: "锁臂",
+          knee_bar: "膝勾", dyno: "动态跳跃", mantle: "翻上" };
+        const TECH_CLR = { side_on: "#3ce0ff", flagging: "#3ce0ff",
+          rock_over: "#3ce0ff", heel_hook: "#ffd35c", cross_feet: "#ffd35c",
+          high_step: "#ffd35c", foot_swap: "#ffd35c", cross_hands: "#ffd35c",
+          match_hands: "#5cff8a", straight_arm: "#9aa3ad",
+          drop_knee: "#c792ff", lock_off: "#c792ff", knee_bar: "#c792ff",
+          dyno: "#ff9a5c", mantle: "#ff9a5c" };
+        const actPh = TECH.phases.filter(p => t >= p.t0 - 0.1 && t <= p.t1 + 0.5).slice(0, 2);
+        /* follow anchor: smoothed head-top (0.5s mean), clamped to safe zones */
+        const w0 = Math.max(0, fi - Math.round(0.5 * FPS));
+        let hx = 0, hy = 0, hn = 0;
+        for (let ai = w0; ai <= fi; ai++) {
+          const n = D.frames[ai].kpts[0];
+          if (n) { hx += n[0]; hy += n[1]; hn++; }
+        }
+        if (hn > 0) {
+          const torso = D.stats.torso_px || 200;
+          const ax = Math.min(880, Math.max(200, hx / hn));
+          const ay = Math.min(1200, Math.max(330, hy / hn - 1.15 * torso));
+          const follow = $("tech-follow");
+          follow.style.left = ax.toFixed(1) + "px";
+          follow.style.top = ay.toFixed(1) + "px";
+        }
+        for (let sIdx = 0; sIdx < 2; sIdx++) {
+          const pill = $("tech-slot-" + sIdx);
+          const p = actPh[sIdx];
+          if (p) {
+            const inA = Math.min(1, Math.max(0, (t - p.t0) / 0.4));
+            const outA = t > p.t1 ? 1 - Math.min(1, (t - p.t1) / 0.5) : 1;
+            pill.style.opacity = (inA * outA * fade).toFixed(3);
+            pill.style.transform = "translateX(" + ((1 - inA) * 36).toFixed(1) + "px)";
+            const label = TECH_TXT[p.name] + (p.side ? " · " + p.side : "");
+            if ($("tech-txt-" + sIdx).textContent !== label) {
+              $("tech-txt-" + sIdx).textContent = label;
+              $("tech-dot-" + sIdx).style.background = TECH_CLR[p.name] || "#9aa3ad";
+            }
+          } else pill.style.opacity = 0;
+        }
+        let flash = null;
+        for (const e of TECH.events) {
+          if (e.t <= t && t < e.t + 1.8) flash = e;
+        }
+        const fin = $("tech-flash-inner");
+        if (flash && fade > 0) {
+          const dt2 = t - flash.t;
+          const inB = Math.min(1, dt2 / 0.12);
+          const outB = flash.t + 1.8 - t < 0.25 ? (flash.t + 1.8 - t) / 0.25 : 1;
+          fin.style.opacity = (inB * outB * fade).toFixed(3);
+          fin.style.transform = "scale(" + (1 + 0.16 * Math.exp(-dt2 * 6)).toFixed(3) + ")";
+          const label = TECH_TXT[flash.name] + (flash.side ? " · " + flash.side : "");
+          if ($("tech-flash-txt").textContent !== label) {
+            $("tech-flash-txt").textContent = label;
+            $("tech-flash-dot").style.background = TECH_CLR[flash.name] || "#9aa3ad";
+          }
+        } else fin.style.opacity = 0;
+
+        /* HUD */
+        const st = f.state;
+        if (st !== lastState) {
+          lastState = st;
+          hudEls.txt.textContent = STATE_TXT[st] || st;
+          hudEls.dot.style.background = STATE_CLR[st] || "#9aa3ad";
+          hudEls.sub.textContent = st.toUpperCase() + " · " + f.n + " CONTACTS";
+        }
+        const pt = t - POSE_T0;
+        if (pt >= 0) {
+          const mm = Math.floor(pt / 60), ss = pt - mm * 60;
+          hudEls.clock.textContent = String(mm).padStart(2, "0") + ":" + ss.toFixed(1).padStart(4, "0");
+        }
+        for (const nm in hudEls.chips) {
+          hudEls.chips[nm].className = "chip" + (f.contacts && f.contacts[nm] ? " on" : "");
+        }
+      }
+
+      const tl = gsap.timeline({ paused: true });
+      const proxy = { t: 0 };
+      tl.to(proxy, { t: DUR, duration: DUR, ease: "none", onUpdate: draw }, 0);
+
+      /* intro title panel: fully visible at frame 1, single fade-out */
+      tl.to("#title-bar", { opacity: 0, duration: 0.5, ease: "power2.in" }, 4.0);
+
+      /* summary card entrance + count-ups */
+      tl.from("#sc-kicker", { opacity: 0, y: 24, duration: 0.6, ease: "power3.out" }, {{SUM_T0}} + 0.15)
+        .from("#sc-main", { opacity: 0, y: 36, duration: 0.7, ease: "power3.out" }, {{SUM_T0}} + 0.3)
+        .from(".s-item", { opacity: 0, y: 30, duration: 0.6, stagger: 0.12, ease: "back.out(1.4)" }, {{SUM_T0}} + 0.5);
+      {{SUM_COUNTUPS}}
+
+      {{CAPTION_TWEENS}}
+      {{EVENT_TWEENS}}
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

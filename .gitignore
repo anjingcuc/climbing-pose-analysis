@@ -1,0 +1,26 @@
+# secrets - never commit
+.env
+*.key
+
+# python
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# models & media (too large, may contain personal footage)
+*.pt
+*.mp4
+*.mov
+
+# pipeline outputs
+work/
+overlay*/
+renders/
+snapshots/
+hf_last.log
+.hf_run.cmd
+gsap.min.js
+
+# os/editor
+.DS_Store
+Thumbs.db
