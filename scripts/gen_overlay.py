@@ -336,7 +336,7 @@ def build_outputs(d, a, b, video_name, title_sub, template_html,
         "ov_end": round(ov_end, 2),
     }
 
-    clips, tweens = [], []
+    clips, tweens, ev_kills = [], [], []
     for k, (e, t0, t1) in enumerate(seg_events):
         moved = "、".join(e["moved"][:2]) + ("等" if len(e["moved"]) > 2 else "") if e["moved"] else "肢体"
         label = ("三点平衡转移" if e.get("s0") == "3pt" and e.get("s1") == "3pt"
@@ -357,10 +357,10 @@ def build_outputs(d, a, b, video_name, title_sub, template_html,
             f'{{opacity:1, y:0, scale:1, duration:0.45, ease:"back.out(1.6)"}}, {t0:.2f});')
         tweens.append(
             f'tl.to("#evi{k}", {{opacity:0, y:-12, duration:0.35, ease:"power2.in"}}, {t0+cap_dur+0.7:.2f});')
-        # hard kill after the fade: non-linear seeks must not leave stale state
-        # (0.10s clear of the fade end - closer reads as a boundary collision)
-        tweens.append(
-            f'tl.set("#evi{k}", {{opacity:0}}, {t0+cap_dur+1.15:.2f});')
+        # hard kill after the fade: non-linear seeks must not leave stale
+        # state (emitted after clip_starts is known - see below for the
+        # boundary-snap pass)
+        ev_kills.append((k, t0 + cap_dur + 1.15))
 
     s3 = stats["state_s"].get("3pt", 0)
     n_transfers = stats.get("transfers", len(seg_events))
@@ -412,18 +412,25 @@ def build_outputs(d, a, b, video_name, title_sub, template_html,
     # boundary so non-linear seeks never leave stale visibility past it
     clip_starts = sorted(set(round(max(0.0, t0 - 0.35), 2) for _, t0, _ in seg_events)
                          | set(cap_starts) | {round(sum_t0, 2)})
+    for k, kill_t in ev_kills:
+        # a hard kill landing EXACTLY on another clip's start boundary trips
+        # gsap_exit_missing_hard_kill: snap it just before the boundary
+        if any(abs(kill_t - cs) < 0.05 for cs in clip_starts):
+            kill_t -= 0.06
+        tweens.append(
+            f'tl.set("#evi{k}", {{opacity:0}}, {kill_t:.2f});')
     for k, (e, t0, t1) in enumerate(seg_events):
         kill_end = t0 + e["cap_dur"] + 1.15
         crossed = [s for s in clip_starts if t0 + 0.4 < s < kill_end]
-        if crossed:
+        for cb in crossed:   # EVERY crossed boundary needs its own kill
             tweens.append(
-                f'tl.set("#evi{k}", {{opacity:0}}, {min(crossed):.2f});')
+                f'tl.set("#evi{k}", {{opacity:0}}, {cb:.2f});')
     for k, (cs_val, ce_val) in enumerate(zip(cap_starts, cap_ends)):
         kill_end = ce_val + 0.40
         crossed = [s for s in clip_starts if cs_val + 0.4 < s < kill_end]
-        if crossed:
+        for cb in crossed:
             cap_tweens.append(
-                f'tl.set("#capi{k}", {{opacity:0}}, {min(crossed):.2f});')
+                f'tl.set("#capi{k}", {{opacity:0}}, {cb:.2f});')
 
     html = (template_html
             .replace("{{DURATION}}", f"{dur:.2f}")

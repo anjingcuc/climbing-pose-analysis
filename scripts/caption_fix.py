@@ -155,6 +155,34 @@ def _punctuate(chunk, trailing):
     return text
 
 
+def strip_cross_boundary_punct(words):
+    """funasr micro-fragment tails punctuate MID-WORD boundaries: word A
+    ends with a tail and word B starts with a char that TOGETHER form one
+    jieba word (应+该, 力+竭, 起+步, 只+是, 右+手 - all measured on real
+    videos). The tail punctuation is a ct-punc fragment artifact, not a
+    sentence end: strip it."""
+    import jieba
+    out = []
+    for w in words:
+        if out:
+            prev = out[-1]
+            core = prev["word"].rstrip("，。！？、；：")
+            tail = prev["word"][len(core):] if core != prev["word"] else ""
+            if tail and core and w["word"]:
+                pair = core[-1] + w["word"][0]
+                # comma artifacts strip via the pair test alone; sentence
+                # tails (。！？) only when dangling on a SINGLE char (应。) -
+                # real sentence ends like 结束了。+然后 must survive (了然
+                # is a dictionary word - measured false positive)
+                if len(pair) == 2 and                         list(jieba.cut(pair, HMM=False)) == [pair] and                         (tail[0] in "，、" or
+                         pair[0] not in "了的着呢吧吗啊嘛呀哦"):
+                    prev = dict(prev)
+                    prev["word"] = core     # artifact tail removed
+                    out[-1] = prev
+        out.append(w)
+    return out
+
+
 def collapse_stutter(words, min_repeat=3):
     """ASR repetition artifact: the same multi-char token repeated >=3 times
     back-to-back (有两个两个两个) collapses to one. A doubled token is kept -
@@ -193,10 +221,10 @@ def resegment(words, max_w=20.0, gap_s=0.9, dur_max=7.0, sentence_gap=0.55):
       boundaries; a word token is never split however long.
     - Adjacent latin words are space-separated in the assembled text.
     """
-    words = collapse_stutter(merge_latin_fragments(
+    words = strip_cross_boundary_punct(collapse_stutter(merge_latin_fragments(
         [{"word": str(w.get("word", "")).strip(), "start": float(w["start"]),
           "end": float(w["end"])} for w in words
-         if str(w.get("word", "")).strip()]))
+         if str(w.get("word", "")).strip()])))
     has_asr_punct = any(w["word"] and w["word"][-1] in _ALL_TAIL
                         for w in words)
 
@@ -245,6 +273,38 @@ def resegment(words, max_w=20.0, gap_s=0.9, dur_max=7.0, sentence_gap=0.55):
             cur = cur[cut:]
     close()
 
+    # post-chunk merge: a hard-cap/gap cut can land INSIDE a word pair
+    # (时|候, 倒|过来) or shatter dramatic pauses into one-word lines
+    # (我们/上去/看看/左). Merge neighbours when the boundary chars form
+    # one jieba word, or when both sides are tiny and no sentence tail
+    # stands between them.
+    def _core(t):
+        return t.rstrip("，。！？、；：")
+
+    import jieba as _jb
+    merged = []
+    for chunk in chunks:
+        if merged:
+            prev = merged[-1]
+            ptxt = _core(_join_chunk(prev))
+            ctxt = _join_chunk(chunk).lstrip()
+            forms_word = False
+            if ptxt and ctxt:
+                pair = ptxt[-1] + ctxt[0]
+                if len(pair) == 2 and list(_jb.cut(pair, HMM=False)) == [pair]:
+                    forms_word = True
+            small = disp_w(ptxt) + disp_w(_core(ctxt)) <= max_w
+            raw_prev = _join_chunk(prev).rstrip()
+            no_sent = not raw_prev.endswith(("。", "！", "？"))
+            gap_here = (chunk[0]["start"] - prev[-1]["end"]) if prev and chunk                 else 9.9
+            if ((forms_word and gap_here <= 0.9) or
+                    (small and no_sent and gap_here <= 0.9
+                     and ctxt[:1] not in "。！？")):
+                merged[-1] = prev + chunk
+                continue
+        merged.append(chunk)
+    chunks = merged
+
     lines = []
     for i, chunk in enumerate(chunks):
         nxt_gap = None
@@ -253,7 +313,11 @@ def resegment(words, max_w=20.0, gap_s=0.9, dur_max=7.0, sentence_gap=0.55):
         if has_asr_punct:
             text = _join_chunk(chunk)
             if not text.endswith(_PUNCT_TAIL):
-                text += "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
+                if nxt_gap is None or nxt_gap >= sentence_gap:
+                    text += "。"
+                elif nxt_gap >= 0.30:
+                    text += "，"
+                # else: hard-cap continuation - no synthetic punctuation
         else:
             trailing = "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
             text = _punctuate(chunk, trailing)
@@ -344,23 +408,26 @@ def main():
 
     caps, srt_lines = [], []
     idx = 0
+    # ONE flat word stream: funasr segment boundaries are decoder fragments,
+    # not sentence boundaries - chunking across them lets the punctuation
+    # contract (and the cross-boundary artifact strip) see every boundary
+    words_all = [w for seg in segments for w in seg.get("words") or []]
+    lines = resegment(words_all) if words_all else []
+    for line in lines:
+        text = fix_text(line["text"], extra_fixes)
+        if not text or text == "。":
+            continue
+        spans = find_terms(text, extra_hl)
+        caps.append({"start": round(line["start"], 2),
+                     "end": round(line["end"], 2), "text": text,
+                     "terms": [{"term": t, "off": a} for a, b, t in spans]})
+        idx += 1
+        srt_lines += [str(idx),
+                      f"{fmt_srt_t(line['start'])} --> {fmt_srt_t(line['end'])}",
+                      text, ""]
+    # wordless segments (engine fallback): emit verbatim as captions
     for seg in segments:
-        words = seg.get("words") or []
-        if words:
-            # re-chunk long whisper segments into readable caption lines
-            for line in resegment(words):
-                text = fix_text(line["text"], extra_fixes)
-                if not text or text == "。":
-                    continue
-                spans = find_terms(text, extra_hl)
-                caps.append({"start": round(line["start"], 2),
-                             "end": round(line["end"], 2), "text": text,
-                             "terms": [{"term": t, "off": a} for a, b, t in spans]})
-                idx += 1
-                srt_lines += [str(idx),
-                              f"{fmt_srt_t(line['start'])} --> {fmt_srt_t(line['end'])}",
-                              text, ""]
-        else:
+        if not seg.get("words"):
             text = fix_text(seg.get("text", ""), extra_fixes)
             if not text or text == "。":
                 continue

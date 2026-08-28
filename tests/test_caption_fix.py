@@ -228,3 +228,30 @@ def test_group_units_no_doubled_punctuation():
     words = group_units_to_words(units, "要点。。")
     joined = "".join(x["word"] for x in words)
     assert "。。" not in joined and joined.count("。") == 1
+
+
+def test_merge_micro_sentences_strips_fragment_punct():
+    """funasr micro-fragments get ct-punc tails at MID-WORD boundaries
+    (这应。|该是) - merging must strip the fragment tail punctuation."""
+    from transcribe import _merge_micro_sentences
+    sents = [{"text": "平衡刹然后这应。", "timestamp": [[0, 500], [500, 900]]},
+             {"text": "该是上左脚还是上右手呢。", "timestamp": [[900, 1500]]},
+             {"text": "我们上右手吧。", "timestamp": [[1500, 1900], [1900, 2200]]}]
+    out = _merge_micro_sentences(sents)
+    joined = "".join(s["text"] for s in out)
+    assert "这应。该" not in joined
+    assert "应该是" in joined                      # mid-word punct removed
+    assert "上右手呢。我们" in joined or "呢" in joined
+
+
+def test_strip_cross_boundary_punct_removes_fragment_artifacts():
+    from caption_fix import strip_cross_boundary_punct
+    ws = [w("这应。", 0.0), w("该是", 0.3), w("上左脚", 0.5)]
+    out = strip_cross_boundary_punct(ws)
+    assert out[0]["word"] == "这应"            # 应+该 = 应该 -> tail stripped
+    ws2 = [w("充分休息啊哎力，", 0.0), w("竭了", 0.4)]
+    out2 = strip_cross_boundary_punct(ws2)
+    assert out2[0]["word"].endswith("力")      # 力+竭 = 力竭 -> stripped
+    ws3 = [w("结束了。", 0.0), w("然后", 0.5)]
+    out3 = strip_cross_boundary_punct(ws3)
+    assert out3[0]["word"] == "结束了。"       # 了+然 not a word -> kept

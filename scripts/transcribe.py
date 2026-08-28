@@ -54,12 +54,39 @@ def whisper_words(wav, language, model_name, initial_prompt=None):
     return words
 
 
+def _merge_micro_sentences(sents):
+    """funasr sentence_info often splits fast speech into 4-6 char micro
+    fragments; ct-punc then punctuates every fragment tail, planting
+    MID-WORD commas/periods (这应。|该是, 只，|是 - measured on a real
+    video). Merge a fragment into its neighbour (core <= 5 chars or
+    boundary gap < 0.2s), stripping the fragment's trailing punctuation:
+    the merged sentence keeps only ct-punc commas that are real. Unit/ts
+    counts are additive so the zip invariant survives the merge."""
+    import re
+    unit_re = re.compile(r"[A-Za-z0-9][A-Za-z0-9.+#'/-]*|[\u4e00-\u9fff]")
+    merged = []
+    for s in sents:
+        text = s.get("text", "")
+        ts = s.get("timestamp") or []
+        if merged and (len(unit_re.findall(merged[-1]["text"])) <= 5 or
+                       len(unit_re.findall(text)) <= 5 or
+                       (ts and merged[-1]["timestamp"] and
+                        ts[0][0] - merged[-1]["timestamp"][-1][1] < 200)):
+            prev = merged[-1]
+            prev["text"] = prev["text"].rstrip("，。、！？；") + text
+            prev["timestamp"] = prev["timestamp"] + ts
+        else:
+            merged.append({"text": text, "timestamp": list(ts)})
+    return merged
+
+
 def funasr_words(wav, hotword=""):
     """paraformer-zh + fsmn-vad + ct-punc -> words with REAL punctuation.
 
     Mapping rules (course-subtitles proven): latin/digit runs are one
     timestamped unit, CJK chars are units; count mismatch falls back to
-    proportional spread inside the sentence span; units regroup into jieba
+    proportional spread inside the sentence span; micro-sentence fragments
+    merge first (see _merge_micro_sentences); units regroup into jieba
     words with punctuation tails kept on the word.
     """
     from funasr import AutoModel
@@ -73,12 +100,17 @@ def funasr_words(wav, hotword=""):
     res = model.generate(input=str(wav), batch_size_s=60, **kwargs)
     words = []
     for r in res:
-        for sent in r.get("sentence_info") or []:
-            units = sentence_units(sent.get("text", ""),
-                                   sent.get("timestamp") or [])
+        for sent in _merge_micro_sentences(r.get("sentence_info") or []):
+            units = sentence_units(sent["text"], sent["timestamp"])
             if units:
-                words.extend(group_units_to_words(units, sent.get("text", "")))
+                words.extend(group_units_to_words(units, sent["text"]))
     words.sort(key=lambda w: (w["start"], w["end"]))
+    cjk = [w for w in words if w["word"] and not w["word"][0].isascii()]
+    if cjk:
+        single = sum(1 for w in cjk if len(w["word"].rstrip("，。！？、；：")) == 1)
+        if single / len(cjk) > 0.40:
+            print("WARNING: %.0f%% single-char CJK words - grouping broken?"
+                  % (100 * single / len(cjk)))
     return words
 
 
@@ -121,6 +153,10 @@ def main():
         # timing reference: whisper on the same wav; warp funasr times onto it
         wwords = whisper_words(wav, args.language, args.model,
                                args.initial_prompt)
+        # cache both raw streams: warp tuning never needs the GPUs again
+        Path(args.out + ".raw.json").write_text(json.dumps(
+            {"funasr": fwords, "whisper": wwords}, ensure_ascii=False),
+            encoding="utf-8")
         from asr_align import anchor_pairs, warp_times
         if wwords:
             pairs, s_text, r_text = anchor_pairs(fwords, wwords)

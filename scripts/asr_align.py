@@ -48,37 +48,39 @@ def group_units_to_words(timed_units, seg_text):
     Latin/digit units are atomic words; CJK stretches regroup into jieba
     tokens; a token's trailing punctuation chars attach to the word (kept,
     never dropped); single-token garbage spans clamp to 2.5s.
+
+    KEY INVARIANT: "".join(unit strings) == seg_text stripped of punctuation
+    and whitespace ("core text"). So jieba runs on the CLEAN core text (never
+    on the raw sentence: spaces/punct inside it shatter jieba into single
+    chars - half the words came out 1-char and punctuation attached one word
+    early; measured 247/457 single-char words before this fix). Tokens map
+    back to units by core-offset, punctuation tails by original position.
     """
     import jieba  # deferred: light, pure-python
 
-    # char-index -> unit-index (units are maximal same-class runs)
-    by_char = {}
-    i = ui = 0
-    while i < len(seg_text) and ui < len(timed_units):
-        u = timed_units[ui][0]
-        if seg_text.startswith(u, i):
-            for off in range(len(u)):
-                by_char[i + off] = ui
-            i += len(u)
-            ui += 1
-        else:
-            i += 1          # punctuation / whitespace: no unit
+    # core text + maps: core position -> unit index / original index
+    core_chars, core2unit, core2orig = [], [], []
+    unit_start = {}                     # unit idx -> its core start offset
+    oi = 0
+    for ui, (u, _, _) in enumerate(timed_units):
+        unit_start[ui] = len(core_chars)
+        for off, c in enumerate(u):
+            # advance the original index to this unit's position
+            while oi < len(seg_text) and not seg_text.startswith(u, oi):
+                oi += 1
+            core_chars.append(c)
+            core2unit.append(ui)
+            core2orig.append(oi + off)
+        oi += len(u)
+    core_text = "".join(core_chars)
 
-    def unit_span(tok, tpos):
-        uis, seen = [], set()
-        for off in range(len(tok)):
-            u = by_char.get(tpos + off)
-            if u is not None and u not in seen:
-                seen.add(u)
-                uis.append(u)
-        return uis
+    consumed = set()                    # original positions already tailed
 
-    def tail_from(p):
-        """Consume the punctuation run at p ONCE (positions recorded so the
-        later punct-only jieba token cannot attach it a second time -
-        doubled 。。，， was a real output bug). Consecutive identical
-        punctuation collapses to one (ct-punc occasionally doubles)."""
+    def tail_from(orig_pos):
+        """Punctuation run at an ORIGINAL position, consumed once; identical
+        consecutive punctuation collapses (ct-punc occasionally doubles)."""
         t = ""
+        p = orig_pos
         while p < len(seg_text) and seg_text[p] in PUNCT and p not in consumed:
             if not t or t[-1] != seg_text[p]:
                 t += seg_text[p]
@@ -86,39 +88,29 @@ def group_units_to_words(timed_units, seg_text):
             p += 1
         return t
 
-    def strip_tok_punct(tok, tpos):
-        """jieba can keep trailing punctuation INSIDE a token (要点。。) -
-        strip it and mark consumed, so it flows through tail_from once."""
-        core = tok.rstrip("".join(c for c in PUNCT))
-        for i2 in range(tpos + len(core), tpos + len(tok)):
-            consumed.discard(i2)            # not yet attached; tail_from adds
-        return core
-
-    consumed = set()
     out, used = [], set()
     pos = 0
-    for tok in jieba.cut(seg_text, HMM=False):
+    for tok in jieba.cut(core_text, HMM=False):
         tpos = pos
         pos += len(tok)
         if not tok.strip():
             continue
-        if all(c in PUNCT for c in tok):
-            live = "".join(c for i2, c in enumerate(tok, tpos)
-                           if i2 not in consumed)
-            if out and live:     # standalone punct not yet consumed: tail it
-                out[-1]["word"] += live
-                for i2 in range(tpos, tpos + len(tok)):
-                    consumed.add(i2)
-            continue
-        core = strip_tok_punct(tok, tpos)
-        if not core:
-            continue
-        uis = [u for u in unit_span(core, tpos) if u not in used]
+        uis, seen = [], set()
+        for off in range(len(tok)):
+            u = core2unit[tpos + off]
+            if u not in seen:
+                seen.add(u)
+                if u not in used:
+                    uis.append(u)
         if not uis:
-            continue        # token overlaps already-consumed units (safety)
+            continue                    # safety: token fully consumed already
         used.update(uis)
         grp = [timed_units[u] for u in uis]
-        word = {"word": core + tail_from(tpos + len(core)),
+        if tpos + len(tok) < len(core2orig):
+            nxt_orig = core2orig[tpos + len(tok)]
+        else:                              # token ends the core: punct run
+            nxt_orig = core2orig[-1] + 1   # starts right after its last char
+        word = {"word": tok + tail_from(nxt_orig),
                 "start": grp[0][1], "end": grp[-1][2]}
         if word["word"][0].isascii():
             word["end"] = min(word["end"], word["start"] + 2.5)
@@ -144,15 +136,18 @@ def char_stream(words):
     return "".join(chars), times
 
 
-def anchor_pairs(src_words, ref_words, min_block=4, tail_tol=5.0):
+def anchor_pairs(src_words, ref_words, min_block=3):
     """Difflib matching blocks between two word streams' char texts ->
-    [(src_time, ref_time)] anchors.
+    [(src_time, ref_time)] anchors. Both block ENDS anchor too (twice the
+    constraints: piecewise-linear interpolation across sparse-anchor gaps
+    missed local drift by seconds with start-only anchors - measured -3.3s
+    mid-film before this fix).
 
-    Tail anchors are only appended when the two streams end within tail_tol
-    of each other: whisper hallucination tails (looped text after the last
-    real speech, sometimes +10s) would otherwise stretch the whole warp.
-    When the tails diverge, extrapolate from the last two real anchors
-    instead of trusting the raw stream end."""
+    Tail anchors are only appended when the last matching block reaches BOTH
+    stream ends (content-aligned tails). A whisper hallucination tail
+    (extra looped text after the last real speech) leaves the block short
+    on the ref side - then extrapolate the real trend instead of trusting
+    the raw stream end."""
     s_text, s_times = char_stream(src_words)
     r_text, r_times = char_stream(ref_words)
     sm = difflib.SequenceMatcher(a=s_text, b=r_text, autojunk=False)
@@ -161,6 +156,8 @@ def anchor_pairs(src_words, ref_words, min_block=4, tail_tol=5.0):
     for b in sm.get_matching_blocks():
         if b.size >= min_block:
             pairs.append((s_times[b.a], r_times[b.b]))
+            pairs.append((s_times[b.a + b.size - 1],
+                          r_times[b.b + b.size - 1]))
             last_block = b
     pairs = sorted(set(pairs))
     s_end, r_end = s_times[-1], r_times[-1]
@@ -182,10 +179,30 @@ def anchor_pairs(src_words, ref_words, min_block=4, tail_tol=5.0):
     return pairs, s_text, r_text
 
 
+def _filter_pairs(pairs, lo=0.55, hi=1.5, span=3.0):
+    """Drop anchors that bend the warp: real speech-time drift is bounded
+    (funasr compresses by silence-dropping; local slope stays ~0.85-1.1).
+    An anchor whose local slope vs the last kept anchor falls outside
+    [lo, hi] over a >= span window is a spurious match - whisper's
+    mid-stream hallucination loops repeat text, and difflib can bind a
+    funasr phrase to the WRONG copy, pulling the warp by seconds."""
+    if len(pairs) < 3:
+        return pairs
+    keep = [pairs[0]]
+    for p in pairs[1:]:
+        x0, y0 = keep[-1]
+        if p[0] - x0 >= span:
+            slope = (p[1] - y0) / (p[0] - x0)
+            if not (lo <= slope <= hi):
+                continue          # suspicious anchor: skip it
+        keep.append(p)
+    return keep
+
+
 def warp_times(words, pairs):
     """Piecewise-linear map of word times through anchor pairs
     (src=funasr compressed -> ref=whisper true)."""
-    pairs = sorted(pairs)
+    pairs = _filter_pairs(sorted(pairs))
     xs = [p[0] for p in pairs]
     out = []
     for w in words:
