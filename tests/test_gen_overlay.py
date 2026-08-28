@@ -225,7 +225,7 @@ def test_build_outputs_tech_badges_follow_and_rebase():
     html, data, tim = build_outputs(d, 0, 30 * 40 - 1, "segment.mp4", "t",
                                     TEMPLATE_PATH.read_text(encoding="utf-8"),
                                     tech=tech)
-    assert 'id="tech-follow"' in html
+    assert 'id="tech-follow"' not in html   # badges removed (user 2026-08-28)
     assert data["tech"]["phases"][0]["t0"] == pytest.approx(10.0)
     assert data["tech"]["events"][0]["t"] == pytest.approx(12.0)
     assert tim["n_tech"] == 2

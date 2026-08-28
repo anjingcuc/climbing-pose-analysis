@@ -24,6 +24,10 @@ $PY scripts/gen_tutorial.py work/analysis.json work/captions.json --video <video
 
 ### 讲解片独有规则（视觉规范之外的增量）
 
+> 注：分析成片产线已于 2026-08-28 移除跟随技术徽章（遮挡手脚/滞后/
+> 与面板重复，见 SKILL.md §5）；讲解片模板暂保留徽章层，下次实际使用
+> 讲解产线时按用户意向决定是否同样移除。
+
 - **讲解段（--pose-start 之前）只有字幕**：无骨架/HUD/徽章/转移提示
 - **转移徽章时间必须用绝对组合时间**（fmt_events 返回段内时间，要 +pose_t0；
   踩过：忘了偏移导致徽章出现在片头）

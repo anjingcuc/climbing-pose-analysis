@@ -70,29 +70,6 @@
       #tech-sub { font-size: 15px; color: #a9bac9; letter-spacing: 1px; margin-top: 6px; }
       #tech-cnt { font-size: 13px; color: #97a2ad; letter-spacing: 1px; margin-top: 14px; }
 
-      /* ---------- technique badges (follow the climber) ---------- */
-      #tech-follow {
-        position: absolute; left: 0; top: 0;
-        transform: translateX(-50%);
-      }
-      .tf-in {
-        display: flex; flex-direction: column; gap: 14px; align-items: center;
-        transform: scale({{SCALE}}); transform-origin: top center;
-      }
-      .tech-pill {
-        display: flex; align-items: center; gap: 12px; white-space: nowrap;
-        padding: 10px 26px; border-radius: 999px;
-        background: rgba(10, 16, 24, 0.85); border: 2px solid rgba(255,255,255,0.18);
-        backdrop-filter: blur(6px);
-      }
-      .tech-dot { width: 15px; height: 15px; border-radius: 50%; background: #9aa3ad; }
-      .tech-txt { font-size: 31px; font-weight: 800; color: #f2f7fb; letter-spacing: 3px; }
-      #tech-flash-inner {
-        display: flex; align-items: center; gap: 14px; white-space: nowrap;
-        padding: 16px 34px; border-radius: 16px;
-        background: rgba(12, 20, 30, 0.92); border: 2px solid rgba(255,255,255,0.22);
-      }
-      #tech-flash-txt { font-size: 38px; font-weight: 800; color: #f8fcfe; letter-spacing: 4px; }
 
       /* ---------- speech subtitles (top zone, clear of every other layer) ----
          Below the top HUD pills (200 base) and above the tech-badge clamp
@@ -240,14 +217,6 @@
         </div>
       </div>
 
-      <div id="tech-follow" class="clip" data-layout-allow-overflow data-start="{{POSE_PRE}}" data-duration="{{POSE_DUR}}" data-track-index="9">
-        <div class="tf-in">
-          <div id="tech-flash-inner" style="opacity: 0"><div id="tech-flash-dot" class="tech-dot" style="width:18px;height:18px"></div><div id="tech-flash-txt"></div></div>
-          <div id="tech-slot-0" class="tech-pill" style="opacity: 0"><div id="tech-dot-0" class="tech-dot"></div><div id="tech-txt-0" class="tech-txt"></div></div>
-          <div id="tech-slot-1" class="tech-pill" style="opacity: 0"><div id="tech-dot-1" class="tech-dot"></div><div id="tech-txt-1" class="tech-txt"></div></div>
-        </div>
-      </div>
-
       <div id="title-panel" class="clip" data-start="0" data-duration="5.0" data-track-index="5">
         <div id="tp-card">
           <div id="tc-kicker" class="t-kicker">CLIMBING TECHNIQUE ANALYSIS</div>
@@ -308,24 +277,24 @@
          Visual hierarchy per confirmed spec: support triangle + 3pt contact
          rings + CoM dominate; skeleton stays a quiet backdrop; no joint
          angle labels (they bury the 3pt story). */
-      const tri = el("polygon", { fill: "rgba(92,255,138,0.20)", stroke: "rgba(140,255,175,0.98)",
+      const tri = el("polygon", { fill: "rgba(92,255,138,0.10)", stroke: "rgba(140,255,175,0.55)",
         "stroke-width": 6 * S, "stroke-dasharray": (14 * S) + " " + (9 * S), points: "", opacity: 0 });
-      const triEcho = el("polygon", { fill: "none", stroke: "rgba(92,255,138,0.30)",
-        "stroke-width": 13 * S, "stroke-linejoin": "round", points: "", opacity: 0 });
-      const trail = el("polyline", { fill: "none", stroke: "rgba(92,255,138,0.75)",
-        "stroke-width": 3.5 * S, "stroke-linecap": "round", points: "" });
-      const plumb = el("line", { stroke: "rgba(92,255,138,0.35)", "stroke-width": 2 * S,
+      const triEcho = el("polygon", { fill: "none", stroke: "rgba(92,255,138,0.14)",
+        "stroke-width": 10 * S, "stroke-linejoin": "round", points: "", opacity: 0 });
+      const trail = el("polyline", { fill: "none", stroke: "rgba(92,255,138,0.45)",
+        "stroke-width": 3 * S, "stroke-linecap": "round", points: "" });
+      const plumb = el("line", { stroke: "rgba(92,255,138,0.20)", "stroke-width": 1.6 * S,
         "stroke-dasharray": (4 * S) + " " + (6 * S) });
-      const bones = BONES.map(() => el("line", { stroke: "#3ce0ff", "stroke-width": 2.6 * S,
-        "stroke-linecap": "round", opacity: 0.22 }));
-      const joints = Array.from({ length: 17 }, () => el("circle", { r: 4 * S, fill: "#fff",
-        opacity: 0.35, stroke: "#0891b2", "stroke-width": 1.2 * S, cx: -99, cy: -99 }));
-      const rings = CONTACTS.map(() => el("circle", { r: 17 * S, fill: "none", stroke: "#ff5c5c",
+      const bones = BONES.map(() => el("line", { stroke: "#3ce0ff", "stroke-width": 2.2 * S,
+        "stroke-linecap": "round", opacity: 0.13 }));
+      const joints = Array.from({ length: 17 }, () => el("circle", { r: 3.5 * S, fill: "#fff",
+        opacity: 0.20, stroke: "#0891b2", "stroke-width": 1 * S, cx: -99, cy: -99 }));
+      const rings = CONTACTS.map(() => el("circle", { r: 15 * S, fill: "none", stroke: "#ff5c5c",
         "stroke-width": 4 * S, cx: -99, cy: -99, opacity: 0 }));
       const comG = el("g", {});
-      const comHalo = el("circle", { r: 30 * S, fill: "#5cff8a", opacity: 0.16, cx: -99, cy: -99 }, comG);
+      const comHalo = el("circle", { r: 30 * S, fill: "#5cff8a", opacity: 0.10, cx: -99, cy: -99 }, comG);
       const comRing = el("circle", { r: 13 * S, fill: "#5cff8a", stroke: "#fff",
-        "stroke-width": 3 * S, cx: -99, cy: -99 }, comG);
+        "stroke-width": 2.2 * S, cx: -99, cy: -99 }, comG);
       const comCross1 = el("line", { stroke: "#fff", "stroke-width": 2 * S, opacity: 0.9 }, comG);
       const comCross2 = el("line", { stroke: "#fff", "stroke-width": 2 * S, opacity: 0.9 }, comG);
 
@@ -334,7 +303,6 @@
       const hudBotEl = $("hud-bottom");
       const capEls = Array.from(document.querySelectorAll(".evcap"));
       const subEls = Array.from(document.querySelectorAll(".cap"));
-      const techFollow = $("tech-follow");
       const hudEls = {
         dot: $("state-dot"), txt: $("state-txt"), sub: $("state-sub"), clock: $("clock")
       };
@@ -356,9 +324,6 @@
         comG.setAttribute("opacity", 0);
         trail.setAttribute("points", "");
         plumb.setAttribute("x1", -99);
-        ["tech-flash-inner", "tech-slot-0", "tech-slot-1"].forEach(id => {
-          const e = $(id); if (e) e.style.opacity = 0;
-        });
       }
 
       /* technique badge vocab (data-driven, pose window only) */
@@ -465,13 +430,13 @@
           if (pa && pb) {
             bones[i].setAttribute("x1", pa[0]); bones[i].setAttribute("y1", pa[1]);
             bones[i].setAttribute("x2", pb[0]); bones[i].setAttribute("y2", pb[1]);
-            bones[i].setAttribute("opacity", 0.22 * fade);
+            bones[i].setAttribute("opacity", 0.13 * fade);
           } else bones[i].setAttribute("opacity", 0);
         });
         joints.forEach((j, i) => {
           if (K[i]) {
             j.setAttribute("cx", K[i][0]); j.setAttribute("cy", K[i][1]);
-            j.setAttribute("opacity", 0.35 * fade);
+            j.setAttribute("opacity", 0.20 * fade);
           }
           else { j.setAttribute("cx", -99); j.setAttribute("cy", -99); }
         });
@@ -487,23 +452,23 @@
             rings[i].removeAttribute("stroke-dasharray");
             if (f.state === "3pt") {
               const pulse = 1 + 0.14 * Math.sin((t * 2 * Math.PI * 0.8) % (2 * Math.PI));
-              rings[i].setAttribute("r", 21 * S * pulse);
+              rings[i].setAttribute("r", 18 * S * pulse);
               rings[i].setAttribute("stroke", "#5cff8a");
-              rings[i].setAttribute("stroke-width", 5.5 * S);
-              rings[i].setAttribute("opacity", 1.0 * fade);
+              rings[i].setAttribute("stroke-width", 4 * S);
+              rings[i].setAttribute("opacity", 0.85 * fade);
             } else {
-              rings[i].setAttribute("r", 14 * S);
+              rings[i].setAttribute("r", 12 * S);
               rings[i].setAttribute("stroke", "#ff5c5c");
-              rings[i].setAttribute("stroke-width", 3 * S);
-              rings[i].setAttribute("opacity", 0.45 * fade);
+              rings[i].setAttribute("stroke-width", 2.5 * S);
+              rings[i].setAttribute("opacity", 0.30 * fade);
             }
           } else if (k && f.state === "3pt") {
             rings[i].setAttribute("cx", k[0]); rings[i].setAttribute("cy", k[1]);
-            rings[i].setAttribute("r", 11 * S);
-            rings[i].setAttribute("stroke", "rgba(255,255,255,0.55)");
-            rings[i].setAttribute("stroke-width", 1.8 * S);
+            rings[i].setAttribute("r", 10 * S);
+            rings[i].setAttribute("stroke", "rgba(255,255,255,0.45)");
+            rings[i].setAttribute("stroke-width", 1.5 * S);
             rings[i].setAttribute("stroke-dasharray", (5 * S) + " " + (4 * S));
-            rings[i].setAttribute("opacity", 0.5 * fade);
+            rings[i].setAttribute("opacity", 0.35 * fade);
           } else rings[i].setAttribute("opacity", 0);
         });
 
@@ -514,8 +479,8 @@
           tri.setAttribute("points", pts);
           triEcho.setAttribute("points", pts);
           const age = Math.min(1, Math.max(0, (t - f.st_t0) / 0.5));
-          tri.setAttribute("opacity", (0.35 + 0.65 * age) * fade);
-          triEcho.setAttribute("opacity", 0.16 * age * fade);
+          tri.setAttribute("opacity", (0.25 + 0.50 * age) * fade);
+          triEcho.setAttribute("opacity", 0.08 * age * fade);
         } else { tri.setAttribute("opacity", 0); triEcho.setAttribute("opacity", 0); }
 
         /* CoM + trail + plumb line */
@@ -550,9 +515,6 @@
           trail.setAttribute("points", "");
           plumb.setAttribute("x1", -99);
         }
-
-        /* technique badges: follow the climber's head, pose window only */
-        drawTechBadges(t, fi, fade, K);
 
         /* support-point tiles: the 3pt composition at a glance; the limb
            out of contact reads as the dashed amber "moving" tile. A 0.25s
@@ -601,102 +563,6 @@
         capEls.forEach(e => { e.style.opacity = (1 - hide).toFixed(3); });
       }
 
-      function drawTechBadges(t, fi, fade, K) {
-        if (fade <= 0 || (!TECH.phases.length && !TECH.events.length)) {
-          clearTechBadges();
-          return;
-        }
-        const actPh = TECH.phases.filter(p => t >= p.t0 - 0.1 && t <= p.t1 + 0.5).slice(0, 2);
-        /* follow anchor: smoothed head-top (0.5s mean), clamped to safe zones */
-        const w0 = Math.max(0, fi - Math.round(0.5 * FPS));
-        let hx = 0, hy = 0, hn = 0;
-        for (let ai = w0; ai <= fi; ai++) {
-          const n = D.frames[ai].kpts && D.frames[ai].kpts[0];
-          if (n) { hx += n[0]; hy += n[1]; hn++; }
-        }
-        if (hn > 0) {
-          const torso = D.stats.torso_px || 200;
-          /* canvas-relative clamps: landscape frames are wider than the
-             1080-base grid, so the badge must track the full canvas;
-             y-min 370 stays clear of the subtitle band (200..360 base) */
-          let ax = Math.min(VW - 240 * S, Math.max(200 * S, hx / hn));
-          let ay = Math.min(Math.min(1200 * S, VH - 720 * S),
-                            Math.max(370 * S, hy / hn - 1.15 * torso));
-          /* collision avoidance: the badge must never sit on joints or
-             contact points (hands/feet hold the story of the film). Try
-             the head-top anchor first, then step away in fixed order.
-             NOTE: left is the badge CENTER (translateX(-50%)) and the
-             stack can hold flash + 2 pills vertically. */
-          const bw = 440 * S, bh = 210 * S;   // generous stack bounds
-          const avoid = [];
-          for (const j of [0, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]) {
-            const p = K[j];
-            if (p) avoid.push(p);
-          }
-          const hits = (x, y) => {
-            for (const p of avoid) {
-              if (p[0] > x - bw / 2 - 26 * S && p[0] < x + bw / 2 + 26 * S &&
-                  p[1] > y - 26 * S && p[1] < y + bh + 26 * S) return true;
-            }
-            return false;
-          };
-          const clampX = (x) => Math.min(VW - bw / 2 - 20 * S,
-                                         Math.max(bw / 2 + 20 * S, x));
-          if (avoid.length && hits(ax, ay)) {
-            const cands = [
-              [0, -1.1 * torso],                       // higher above head
-              [-(bw / 2 + 0.5 * torso), 0],            // left of the head
-              [bw / 2 + 0.5 * torso, 0],               // right of the head
-              [0, 1.05 * torso],                       // below the head
-            ];
-            for (const [ox, oy] of cands) {
-              const nx = clampX(ax + ox);
-              const ny = Math.min(VH - 760 * S, Math.max(370 * S, ay + oy));
-              if (!hits(nx, ny)) { ax = nx; ay = ny; break; }
-            }
-          }
-          techFollow.style.left = ax.toFixed(1) + "px";
-          techFollow.style.top = ay.toFixed(1) + "px";
-        }
-        for (let sIdx = 0; sIdx < 2; sIdx++) {
-          const pill = $("tech-slot-" + sIdx);
-          const p = actPh[sIdx];
-          if (p) {
-            const inA = Math.min(1, Math.max(0, (t - p.t0) / 0.4));
-            const outA = t > p.t1 ? 1 - Math.min(1, (t - p.t1) / 0.5) : 1;
-            pill.style.opacity = (inA * outA * fade).toFixed(3);
-            pill.style.transform = "translateX(" + ((1 - inA) * 36).toFixed(1) + "px)";
-            const label = TECH_TXT[p.name] + (p.side ? " · " + p.side : "");
-            if ($("tech-txt-" + sIdx).textContent !== label) {
-              $("tech-txt-" + sIdx).textContent = label;
-              $("tech-dot-" + sIdx).style.background = TECH_CLR[p.name] || "#9aa3ad";
-            }
-          } else pill.style.opacity = 0;
-        }
-        let flash = null;
-        for (const e of TECH.events) {
-          if (e.t <= t && t < e.t + 1.8) flash = e;
-        }
-        const fin = $("tech-flash-inner");
-        if (flash) {
-          const dt2 = t - flash.t;
-          const inB = Math.min(1, dt2 / 0.12);
-          const outB = flash.t + 1.8 - t < 0.25 ? (flash.t + 1.8 - t) / 0.25 : 1;
-          fin.style.opacity = (inB * outB * fade).toFixed(3);
-          fin.style.transform = "scale(" + (1 + 0.16 * Math.exp(-dt2 * 6)).toFixed(3) + ")";
-          const label = TECH_TXT[flash.name] + (flash.side ? " · " + flash.side : "");
-          if ($("tech-flash-txt").textContent !== label) {
-            $("tech-flash-txt").textContent = label;
-            $("tech-flash-dot").style.background = TECH_CLR[flash.name] || "#9aa3ad";
-          }
-        } else fin.style.opacity = 0;
-      }
-
-      function clearTechBadges() {
-        ["tech-flash-inner", "tech-slot-0", "tech-slot-1"].forEach(id => {
-          const e = $(id); if (e) e.style.opacity = 0;
-        });
-      }
 
       const tl = gsap.timeline({ paused: true });
       const proxy = { t: 0 };
