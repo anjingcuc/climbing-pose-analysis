@@ -1,38 +1,48 @@
 # Climbing Pose Analysis · 攀岩姿态与三点平衡分析管线
 
-[English](#english) | 中文
-
-对固定机位攀岩/抱石视频做**本地 GPU 人体姿态追踪与生物力学分析**，并渲染竖屏
+对固定机位攀岩/抱石视频做**本地 GPU 人体姿态追踪与生物力学分析**，渲染竖屏
 叠加标注成片。可作为命令行管线使用，也可作为 Agent 技能（SKILL.md）装载。
+
+```
+视频 → 姿态提取(YOLO11x-pose) → 生物力学(Winter CoM/接触/三点平衡)
+     → 技术动作检测(14 种) → 语音字幕(双引擎) → hyperframes 渲染(4K 竖屏)
+```
 
 ## 功能特性
 
-- **姿态追踪**：YOLO11x-pose 全片提取 COCO-17 关键点，单目标跟随（多人帧自动锁定攀爬者）
-- **生物力学分析**：Winter 人体测量学全身重心（CoM）+ 轨迹、腕/踝接触检测
-  （速度滞回 + 噪声底自适应校准）、三点平衡状态机、支撑三角、重心转移事件
-- **技术动作检测**（14 个，2D 几何可靠集，附阈值依据表）：侧身 / 挂脚 / 换脚 /
-  交叉脚 / 交叉手 / 并手 / 旗式 / 直臂休息 / 高脚 / 内扣膝 / 锁臂 / 膝勾 /
-  压重心 / 动态跳跃 / 翻上——实时显示在底部「当前技术动作」面板
-- **语音字幕 v3（双引擎各司其职）**：FunASR paraformer-zh（中文 CER 优于
-  whisper、自带 ct-punc 标点、热词硬偏置）出文本，whisperX large-v3 同音频
-  出时间轴，difflib 文本锚点分段线性 warp 修正 FunASR 时间戳漂移；词边界
-  断句 + 标点保留契约 + 停顿标点兜底 + 同音纠错词典（DICT.md）+ 可选
-  LLM 纠错（五道确定性门禁）
-- **克制的视觉标注**（不遮挡攀岩者）：低透明度骨架与支撑三角、三点平衡
-  接触圈、重心光晕、底部支撑点四瓷砖面板；**无跟随徽章、无关节角度标注**
-- **成片渲染**：hyperframes 渲染源分辨率竖屏 MP4；字幕采用骨骼段碰撞式
-  稳定避让（真实遮挡才换位、最短驻留、绝不移入占用槽）；切片与编码自动
-  探测 NVENC（驱动 ≥610 生效，回退 x264/CPU）
+- **姿态追踪**：全片 COCO-17 关键点，单目标跟随（多人帧自动锁定攀爬者）
+- **生物力学**：Winter 全身重心（CoM）+ 轨迹、腕/踝接触检测（速度滞回 +
+  噪声底自适应校准）、三点平衡状态机、支撑三角、重心转移事件
+- **技术动作检测**（14 个，2D 几何可靠集，阈值附依据表）：侧身 / 挂脚 /
+  换脚 / 交叉脚 / 交叉手 / 并手 / 旗式 / 直臂休息 / 高脚 / 内扣膝 / 锁臂 /
+  膝勾 / 压重心 / 动态跳跃 / 翻上——实时显示在底部「当前技术动作」面板
+- **语音字幕（双引擎各司其职）**：FunASR paraformer-zh（中文识别更准、
+  自带标点、热词硬偏置）出文本；whisperX large-v3 同音频出时间轴，文本
+  锚点 warp 修正 FunASR 的时间戳漂移；词边界断句、标点保留契约、同音
+  纠错词典（DICT.md）、可选 LLM 纠错（五道确定性门禁）
+- **克制的视觉标注**（让位于攀岩者）：低透明度骨架与支撑三角、三点平衡
+  接触圈、重心光晕、底部支撑点面板；无跟随徽章、无关节角度标注
 - **质量门禁**：pose / analysis 两级 schema 验证 + hyperframes check +
-  **121 个单元测试**（含破坏性注入与真实语料回归契约）
+  121 个单元测试（含破坏性注入与真实语料回归契约）
 
 ## 环境要求
 
-- NVIDIA GPU（CUDA）+ Python 3.11
-- `torch==2.6.0+cu124` + `ultralytics` + `scipy` + `opencv-python` +
-  `funasr` + `jieba` + `pytest`
-- `ffmpeg`、Node.js ≥ 22（hyperframes CLI）
-- yolo11x-pose.pt 权重（自行下载，勿入库）
+| 依赖 | 说明 |
+|---|---|
+| NVIDIA GPU（CUDA）| 3090 上 5 分钟视频提取约 3 分钟；切片/编码自动探测 NVENC |
+| Python 3.11 | `torch==2.6.0+cu124` + `ultralytics` + `scipy` + `opencv-python` + `funasr` + `jieba` + `pytest` |
+| ffmpeg | 切片/抽帧/转码；NVENC 需驱动 ≥610 |
+| Node.js ≥ 22 | hyperframes CLI（`npx hyperframes@0.8.6`） |
+
+> [!NOTE]
+> yolo11x-pose.pt 权重（118 MB）需自行下载，勿入库；GitHub 直连不通时在
+> 下载地址前加 `https://gh-proxy.com/` 前缀。首次运行 FunASR 会从
+> modelscope 下载约 1 GB 模型。
+
+> [!IMPORTANT]
+> 手机竖屏视频是「横屏编码 + rotation 元数据」——画布必须等于**显示尺寸**
+> （管线用 cv2 首帧自动探测），否则骨架整体错位。判定与处置见
+> [references/TROUBLESHOOTING.md](references/TROUBLESHOOTING.md)。
 
 ## 快速开始
 
@@ -52,10 +62,15 @@ cd overlay && npx hyperframes@0.8.6 check && npx hyperframes@0.8.6 render
 讲解片产线、难点插剪、排错手册）见 [SKILL.md](SKILL.md) 与
 [references/](references/)。
 
+> [!TIP]
+> 中国网络环境：pip 走清华镜像，torch 走阿里云 pytorch-wheels（单线程慢时
+> 用并发分段下载）；`HF_ENDPOINT=https://hf-mirror.com`。全部镜像与代理
+> 处置见 TROUBLESHOOTING.md。
+
 ## 作为 Agent 技能安装
 
-把本仓库放进你的技能目录（如 `~/.agents/skills/`）即可被支持 SKILL.md
-规范的 Agent（Claude Code / Codex CLI 等）按描述自动调用：
+把本仓库放进技能目录（如 `~/.agents/skills/`）即可被支持 SKILL.md 规范的
+Agent（Claude Code / Codex CLI 等）按描述自动调用：
 
 ```bash
 git clone https://github.com/anjingcuc/climbing-pose-analysis.git \
@@ -68,10 +83,10 @@ git clone https://github.com/anjingcuc/climbing-pose-analysis.git \
 python -m pytest tests/ -q    # 121 passed
 ```
 
-覆盖：选人策略、关键点清洗、角度计算、Winter 质量模型、接触检测滞回、
-三角形裕度、选段、字幕断句/标点保留/微碎句合并/跨界伪标点剥离、字幕避让
-状态机、FunASR 词映射与漂移 warp、LLM 纠错五道门禁、验证器破坏性注入、
-技术动作检测器、合成场景端到端。
+覆盖：选人策略、关键点清洗、Winter 质量模型、接触检测滞回、三角形裕度、
+选段、字幕断句/标点保留/微碎句合并/跨界伪标点剥离、字幕避让状态机、
+FunASR 词映射与漂移 warp、LLM 纠错五道门禁、验证器破坏性注入、技术动作
+检测器、合成场景端到端。
 
 ## 项目结构
 
@@ -85,35 +100,11 @@ python -m pytest tests/ -q    # 121 passed
     └── TUTORIAL.md        # 讲解片产线 + 难点插剪
 ```
 
-## 许可
-
-[MIT](LICENSE) © anjingcuc
-
 ---
 
-<a id="english"></a>
-
-# Climbing Pose Analysis (English)
-
-Local GPU pipeline for climbing/bouldering videos: pose tracking →
-biomechanics (Winter CoM, contact detection, three-point-balance state
-machine, weight-transfer events) → 14 climbing-technique detectors →
-captioned, annotated vertical video at source resolution.
-
-Caption engine v3: FunASR (paraformer-zh + ct-punc: better Chinese CER,
-native punctuation, hotword bias) provides text while whisperX large-v3
-times the same audio; difflib text anchors warp FunASR's drifting
-timestamps onto the whisper timeline. Word-boundary segmentation with a
-punctuation-retention contract, a homophone correction dictionary
-(DICT.md) and an optional LLM pass behind five deterministic gates.
-
-Visuals stay out of the climber's way: low-opacity skeleton and support
-triangle, pulsing 3pt contact rings, a bottom support-points + current-
-technique panel (no following badges, no joint-angle labels), and
-skeleton-collision-driven subtitle placement that moves only on real
-occlusion. Segment cuts and final encoding auto-probe NVENC.
-
-Works as a CLI pipeline or as an Agent skill (SKILL.md). See
-[SKILL.md](SKILL.md) for the full workflow and [references/](references/)
-for detector thresholds, troubleshooting and the tutorial/crux-cut
-pipelines. 121 unit tests. MIT licensed.
+English: a local-GPU pipeline for fixed-camera climbing videos — pose
+tracking, biomechanics (Winter CoM, contact detection, three-point-balance
+state machine), 14 technique detectors, and a dual-engine Chinese caption
+pipeline (FunASR text + whisper timing, warped onto one timeline) —
+rendered as annotated vertical video via hyperframes, with quality gates
+and 121 unit tests. Works as a CLI or as an Agent skill (see SKILL.md).
