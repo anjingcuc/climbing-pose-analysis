@@ -1,75 +1,177 @@
-"""Transcribe a climbing tutorial video with whisperX (GPU) -> word-level JSON.
+"""Transcribe a climbing video -> word-level JSON (caption pipeline S1).
 
-Usage: python transcribe.py <video> -o words.json [--model large-v2]
+Engine v2 (2026-08, adapted from the course-subtitles pipeline):
+- DEFAULT funasr: paraformer-zh + fsmn-vad + ct-punc. Chinese CER beats
+  whisper, ~100x faster, ships REAL punctuation, and takes hotwords (from
+  DICT.md) as a hard bias - much stronger than whisper's initial_prompt.
+  Its weak spot: word timestamps drift ~-3s/min on continuous speech
+  (measured -17s @ 285s), so a whisper pass runs as the TIMING REFERENCE
+  and funasr times are warped onto it via text anchors (text from funasr,
+  timing from whisper - both engines do what they are best at).
+- --engine whisper: pure whisperX path (large-v3 + align), the old default.
+
+Usage: python transcribe.py <video> -o words.json [--dict DICT.md]
+                              [--engine funasr|whisper] [--model large-v3]
 Set HF_ENDPOINT=https://hf-mirror.com for China network before running.
 """
 import argparse
 import json
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 from procutil import run as sub_run
 
 
+def extract_wav(video, out_wav=None):
+    wav = Path(out_wav or (Path(tempfile.gettempdir()) / "climb_tx.wav"))
+    sub_run(["ffmpeg", "-y", "-v", "error", "-i", str(video),
+             "-vn", "-ac", "1", "-ar", "16000", str(wav)])
+    return wav
+
+
+def whisper_words(wav, language, model_name, initial_prompt=None):
+    """whisperX large-v3 + word alignment (trusted timeline)."""
+    import whisperx  # deferred: heavy import
+
+    load_kw = {"compute_type": "float16", "language": language}
+    if initial_prompt:
+        # whisperX takes decoder hints via asr_options, not transcribe kwargs
+        load_kw["asr_options"] = {"initial_prompt": initial_prompt}
+    model = whisperx.load_model(model_name, "cuda", **load_kw)
+    audio = whisperx.load_audio(str(wav))
+    result = model.transcribe(audio, batch_size=16, language=language)
+    align_model, meta = whisperx.load_align_model(
+        language_code=result.get("language", language), device="cuda")
+    result = whisperx.align(result["segments"], align_model, meta, audio,
+                            "cuda", return_char_alignments=False)
+    words = []
+    for s in result["segments"]:
+        for w in s.get("words") or []:
+            t = str(w.get("word", "")).strip()
+            if t:
+                words.append({"word": t, "start": w["start"], "end": w["end"]})
+    return words
+
+
+def funasr_words(wav, hotword=""):
+    """paraformer-zh + fsmn-vad + ct-punc -> words with REAL punctuation.
+
+    Mapping rules (course-subtitles proven): latin/digit runs are one
+    timestamped unit, CJK chars are units; count mismatch falls back to
+    proportional spread inside the sentence span; units regroup into jieba
+    words with punctuation tails kept on the word.
+    """
+    from funasr import AutoModel
+    from asr_align import group_units_to_words, sentence_units
+
+    model = AutoModel(model="paraformer-zh", vad_model="fsmn-vad",
+                      punc_model="ct-punc", disable_update=True)
+    kwargs = {"sentence_timestamp": True}
+    if hotword:
+        kwargs["hotword"] = hotword
+    res = model.generate(input=str(wav), batch_size_s=60, **kwargs)
+    words = []
+    for r in res:
+        for sent in r.get("sentence_info") or []:
+            units = sentence_units(sent.get("text", ""),
+                                   sent.get("timestamp") or [])
+            if units:
+                words.extend(group_units_to_words(units, sent.get("text", "")))
+    words.sort(key=lambda w: (w["start"], w["end"]))
+    return words
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("video")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--engine", choices=["funasr", "whisper"], default="funasr")
     ap.add_argument("--model", default="large-v3",
-                    help="whisperX model (large-v3 recommended for Chinese)")
+                    help="whisperX model (timing reference / whisper engine)")
     ap.add_argument("--language", default="zh")
-    ap.add_argument("--initial-prompt", default=None,
-                    help="domain vocabulary hint for the whisper decoder, "
-                         "e.g. terms/names from DICT.md - improves recall of "
-                         "climbing jargon and people's names")
+    ap.add_argument("--initial-prompt", default=None)
     ap.add_argument("--dict", dest="dict_path", default=None,
-                    help="workspace DICT.md - feeds the decoder prompt "
-                         "automatically (## 转录 initial-prompt + 术语 sections)")
+                    help="workspace DICT.md - hotwords for funasr, decoder "
+                         "prompt for whisper (see caption_fix.load_dict)")
     args = ap.parse_args()
-
-    if args.dict_path:
-        from caption_fix import load_dict  # shared DICT.md parser
-        dd = load_dict(args.dict_path)
-        dict_prompt = " ".join(filter(None, [
-            dd["prompt"], "、".join(sorted(dd["highlight"]))]))
-        args.initial_prompt = " ".join(
-            filter(None, [args.initial_prompt, dict_prompt])).strip()
 
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
 
-    import whisperx  # deferred: heavy import
+    hotword = prompt = ""
+    if args.dict_path:
+        from caption_fix import load_dict
+        dd = load_dict(args.dict_path)
+        import re
+        hotword = " ".join(re.findall(r"[A-Za-z0-9\u4e00-\u9fff]+",
+                                      "、".join(sorted(dd["highlight"]))))[:400]
+        prompt = dd["prompt"] or None
+    args.initial_prompt = args.initial_prompt or prompt
 
-    wav = Path(tempfile.gettempdir()) / "climb_tx.wav"
-    sub_run(["ffmpeg", "-y", "-v", "error", "-i", str(args.video),
-             "-vn", "-ac", "1", "-ar", "16000", str(wav)])
+    wav = extract_wav(args.video)
 
-    audio = whisperx.load_audio(str(wav))
-    # whisperX's batched pipeline takes decoder hints via asr_options, not
-    # transcribe kwargs (initial_prompt seeds the vocabulary, e.g. DICT terms)
-    load_kw = {"compute_type": "float16", "language": args.language}
-    if args.initial_prompt:
-        load_kw["asr_options"] = {"initial_prompt": args.initial_prompt}
-    model = whisperx.load_model(args.model, "cuda", **load_kw)
-    result = model.transcribe(audio, batch_size=16, language=args.language)
-    print(f"segments={len(result['segments'])}")
+    if args.engine == "whisper":
+        words = whisper_words(wav, args.language, args.model,
+                              args.initial_prompt)
+        segments = _to_segments(words)
+    else:
+        fwords = funasr_words(wav, hotword)
+        if not fwords:
+            raise SystemExit("funasr produced no words - check the audio track")
+        # timing reference: whisper on the same wav; warp funasr times onto it
+        wwords = whisper_words(wav, args.language, args.model,
+                               args.initial_prompt)
+        from asr_align import anchor_pairs, warp_times
+        if wwords:
+            pairs, s_text, r_text = anchor_pairs(fwords, wwords)
+            anchors = len([p for p in pairs if p != (0.0, 0.0)]) - 1
+            drift = (wwords[-1]["end"] - fwords[-1]["end"]) if fwords else 0
+            print(f"anchors={anchors} end-drift={drift:+.1f}s "
+                  f"(funasr text, whisper timing)")
+            if anchors < 3:
+                print("WARNING: <3 text anchors - warping unreliable, "
+                      "check engines' languages match")
+            fwords = warp_times(fwords, pairs)
+        segments = _to_segments(fwords, split_on_punct=True)
 
-    # alignment for word-level timestamps
-    align_model, meta = whisperx.load_align_model(
-        language_code=result.get("language", args.language), device="cuda")
-    result = whisperx.align(result["segments"], align_model, meta, audio,
-                            "cuda", return_char_alignments=False)
-
-    segs = []
-    for s in result["segments"]:
-        segs.append({"start": s["start"], "end": s["end"],
-                     "text": s.get("text", ""),
-                     "words": s.get("words") or []})
     Path(args.out).write_text(json.dumps(
-        {"segments": segs}, ensure_ascii=False, indent=1), encoding="utf-8")
-    n_words = sum(len(s["words"]) for s in segs)
-    print(f"wrote {args.out}: {len(segs)} segments, {n_words} words")
+        {"segments": segments}, ensure_ascii=False, indent=1), encoding="utf-8")
+    n = sum(len(s["words"]) for s in segments)
+    print(f"wrote {args.out}: {len(segments)} segments, {n} words "
+          f"(engine={args.engine})")
+
+
+def _to_segments(words, split_on_punct=False):
+    """Group the flat word list into segments. funasr words carry real
+    punctuation: sentence-final tails (。！？) end a segment; whisper words
+    (no punctuation) group by <=0.9s gaps."""
+    segs, cur = [], []
+    prev_end = None
+
+    def flush():
+        if cur:
+            segs.append({"start": round(cur[0]["start"], 3),
+                         "end": round(cur[-1]["end"], 3),
+                         "text": "".join(w["word"] for w in cur),
+                         "words": [{"word": w["word"],
+                                    "start": round(w["start"], 3),
+                                    "end": round(w["end"], 3)} for w in cur]})
+            cur.clear()
+
+    for w in words:
+        if split_on_punct:
+            if prev_end is not None and w["start"] - prev_end > 0.9:
+                flush()
+            cur.append(w)
+            if any(c in w["word"] for c in "。！？!?"):
+                flush()
+        else:
+            if prev_end is not None and w["start"] - prev_end > 0.9 and cur:
+                flush()
+            cur.append(w)
+        prev_end = w["end"]
+    flush()
+    return segs
 
 
 if __name__ == "__main__":

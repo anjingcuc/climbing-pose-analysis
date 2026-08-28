@@ -67,13 +67,15 @@ HIGHLIGHT = {"重心", "三点", "侧身", "侧拉", "仰角", "挂脚", "勾脚
 
 BOUNDARY = "的了呢吧吗啊嘛哟哦啦嘛对我说你你我他这那就是很挺不太还就也都又再"
 _PUNCT_TAIL = ("，", "。", "！", "？", ",", ".", "!", "?")
+_SENT_TAIL = "。！？!?；;"
+_COMMA_TAIL = "，、,;"
+_ALL_TAIL = _PUNCT_TAIL + ("、", ";", "；")
 
 
 def _cut_at_boundary(words):
     """Word-level backtrack: prefer closing a line after a word that ends
     with a natural particle. NEVER splits inside a word token (words are
-    the atomic unit of whisperX alignment - slicing characters garbles
-    Chinese subtitles)."""
+    the atomic unit of ASR alignment - slicing characters garbles Chinese)."""
     n = len(words)
     for k in range(1, min(5, n)):
         tok = words[n - k - 1]["word"]
@@ -82,8 +84,65 @@ def _cut_at_boundary(words):
     return n
 
 
+def disp_w(text):
+    """Display width: CJK/fullwidth = 1, ASCII = 0.5 (course-subtitles rule)."""
+    return sum(1.0 if ord(c) > 0x2E7F else 0.5 for c in text)
+
+
+def merge_latin_fragments(words):
+    """Glue single-character latin fragments back onto an adjacent latin word
+    (ASR often splits one term into 'v'+'olume'; a split latin word would
+    break cues mid-term). Only merges fragments of length 1; never merges
+    two multi-char latin words (that would invent terms)."""
+    out = []
+    for w in words:
+        t = w["word"]
+        if out:
+            prev = out[-1]
+            pt = prev["word"]
+            prev_latin_end = (pt and pt[-1].isascii() and pt[-1].isalpha()
+                              and pt[-1] not in _PUNCT_TAIL)
+            # trailing single-char fragment glues onto the previous latin word
+            if (len(t) == 1 and t.isascii() and t.isalpha()
+                    and prev_latin_end):
+                prev = dict(prev)
+                prev["word"] = pt + t
+                prev["end"] = w["end"]
+                out[-1] = prev
+                continue
+            # leading single-char fragment glues onto the next latin word
+            if (len(pt) == 1 and pt.isascii() and pt.isalpha()
+                    and t and t[0].isascii() and t[0].isalpha()):
+                merged = dict(w)
+                merged["word"] = pt + t
+                merged["start"] = prev["start"]
+                out[-1] = merged
+                continue
+        if out and t and t[0].isascii() and t[0].isalpha() and \
+                out[-1]["word"] and out[-1]["word"][-1].isascii() and \
+                out[-1]["word"][-1].isalpha() and \
+                out[-1]["word"][-1] not in _PUNCT_TAIL:
+            w = dict(w)                     # adjacent latin words: keep the
+            w["word"] = " " + t             # space glued so assembly shows it
+        out.append(w)
+    return out
+
+
+def _join_chunk(chunk):
+    """Assemble cue text: latin runs separated by single spaces."""
+    text = ""
+    for w in chunk:
+        t = w["word"]
+        if text and text[-1].isascii() and text[-1].isalpha() and \
+                t and t[0].isascii() and t[0].isalpha():
+            text += " "
+        text += t.lstrip() if t.startswith(" ") and not text else t
+    return text
+
+
 def _punctuate(chunk, trailing):
-    """Join word tokens, inserting a comma at speech pauses."""
+    """Join word tokens, inserting a comma at speech pauses (fallback when
+    the ASR did not punctuate; never drops ASR punctuation)."""
     text, last_end = "", None
     for w in chunk:
         if last_end is not None and w["start"] - last_end >= 0.30 and \
@@ -96,44 +155,109 @@ def _punctuate(chunk, trailing):
     return text
 
 
-def resegment(words, max_chars=18, gap_s=0.6, sentence_gap=0.55):
+def collapse_stutter(words, min_repeat=3):
+    """ASR repetition artifact: the same multi-char token repeated >=3 times
+    back-to-back (有两个两个两个) collapses to one. A doubled token is kept -
+    real speech does repeat twice for emphasis (对吧对吧)."""
+    out, run = [], []
+    for w in words:
+        if run and w["word"] == run[0]["word"]:
+            run.append(w)
+            continue
+        if len(run) >= min_repeat and len(run[0]["word"]) >= 2:
+            keep = dict(run[0])
+            keep["end"] = run[-1]["end"]
+            out.append(keep)               # one occurrence, full span
+        else:
+            out.extend(run)
+        run = [w]
+    if len(run) >= min_repeat and len(run[0]["word"]) >= 2:
+        keep = dict(run[0])
+        keep["end"] = run[-1]["end"]
+        out.append(keep)
+    else:
+        out.extend(run)
+    return out
+
+
+def resegment(words, max_w=20.0, gap_s=0.9, dur_max=7.0, sentence_gap=0.55):
     """Re-chunk word timestamps into readable, punctuated caption lines.
 
-    Gates (user-confirmed):
-    - lines only break on WORD boundaries (a word token is never split
-      across two captions, however long it is);
-    - inter-word pauses >= 0.30s insert a comma; a line followed by a
-      >= sentence_gap pause (or the end of the stream) ends with a full
-      stop, otherwise a comma (the sentence continues next line).
+    Gates (user-confirmed + course-subtitles contract):
+    - PUNCTUATION RETENTION: funasr words carry real ct-punc tails - they
+      are kept verbatim and DRIVE the segmentation (sentence tails 。！？ =
+      hard break; comma tails break under length pressure: width >= 10 and
+      (real gap >= 0.25s or width >= 20)). Pause-synthesized punctuation is
+      a fallback that only runs when the stream carries none (whisper).
+    - Lines break only on WORD boundaries; hard cap width/duration at word
+      boundaries; a word token is never split however long.
+    - Adjacent latin words are space-separated in the assembled text.
     """
+    words = collapse_stutter(merge_latin_fragments(
+        [{"word": str(w.get("word", "")).strip(), "start": float(w["start"]),
+          "end": float(w["end"])} for w in words
+         if str(w.get("word", "")).strip()]))
+    has_asr_punct = any(w["word"] and w["word"][-1] in _ALL_TAIL
+                        for w in words)
+
     chunks, cur, prev_end = [], [], None
-    for w in words:
-        text = str(w.get("word", "")).strip()
-        if not text:
-            continue
-        w = {"word": text, "start": float(w["start"]), "end": float(w["end"])}
-        if cur and prev_end is not None and w["start"] - prev_end > gap_s:
-            chunks.append(cur)            # hard speech pause -> new chunk
+
+    def close():
+        nonlocal cur
+        if cur:
+            chunks.append(cur)
             cur = []
+
+    for w in words:
+        gap = None if prev_end is None else w["start"] - prev_end
+        tail = w["word"][-1] if w["word"] else ""
+        if has_asr_punct:
+            if cur and tail in _SENT_TAIL:
+                cur.append(w)
+                close()                     # trust ct-punc sentence breaks
+                prev_end = w["end"]
+                continue
+            if cur and gap is not None and gap > gap_s:
+                close()                     # real speech pause
+        else:
+            if cur and gap is not None and gap > 0.6:
+                close()
         cur.append(w)
         prev_end = w["end"]
-        if sum(len(x["word"]) for x in cur) >= max_chars:
-            cut = _cut_at_boundary(cur)
+        width = disp_w("".join(x["word"] for x in cur))
+        dur = cur[-1]["end"] - cur[0]["start"]
+        if has_asr_punct and cur and tail in _COMMA_TAIL and \
+                width >= 10 and (gap is not None and gap >= 0.25 or width >= 20):
+            close()                         # comma under length pressure
+        elif width > max_w or dur > dur_max:
+            if has_asr_punct:
+                # forced break: prefer the most recent comma-tailed word
+                cut = max((i + 1 for i, x in enumerate(cur[:-1])
+                           if x["word"] and x["word"][-1] in _COMMA_TAIL),
+                          default=0)
+                if cut < 3:
+                    cut = len(cur) - 1
+            else:
+                cut = _cut_at_boundary(cur)
+            if cut <= 0:
+                cut = len(cur)              # single overlong word: keep whole
             chunks.append(cur[:cut])
             cur = cur[cut:]
-            if cur:
-                prev_end = cur[-1]["end"]
-    if cur:
-        chunks.append(cur)
+    close()
 
     lines = []
     for i, chunk in enumerate(chunks):
         nxt_gap = None
         if i + 1 < len(chunks):
             nxt_gap = chunks[i + 1][0]["start"] - chunk[-1]["end"]
-        trailing = "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
-        text = _punctuate(chunk, trailing)
-        if text.strip("，。"):
+        if has_asr_punct:
+            text = _join_chunk(chunk)
+            if not text.endswith(_PUNCT_TAIL):
+                text += "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
+        else:
+            trailing = "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
+            text = _punctuate(chunk, trailing)
+        if text.strip("，。 "):
             lines.append({"start": chunk[0]["start"], "end": chunk[-1]["end"],
                           "text": text})
     return lines

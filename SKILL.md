@@ -66,6 +66,13 @@ check 0 error；snapshot 抽帧骨架贴合攀岩者；首帧为原始画面+局
 
 ## 4. 语音字幕与技术动作（有口播的视频）
 
+**转写引擎 v3（funasr 默认，双引擎各司其职）**：paraformer-zh + ct-punc 出
+文本（中文 CER 优于 whisper、自带真实标点、热词硬偏置直接吃 DICT 术语）；
+whisperX large-v3 同音频跑一遍**只取时间轴**（funasr 时间戳在连续语音上漂移
+≈-3s/min，实测 285s 处 -17s），difflib 文本锚点分段线性 warp（asr_align.py）。
+`--engine whisper` 可回退纯 whisper 路线。依赖：`pip install funasr jieba`
+（钉住 torch==2.6.0+cu124），首次运行 modelscope 下载约 1GB。
+
 ```bash
 $PY scripts/transcribe.py <video> -o work/words.json --dict DICT.md   # L1
 $PY scripts/caption_fix.py work/words.json -o work/captions.srt --json work/captions.json --dict DICT.md   # L2
@@ -76,12 +83,16 @@ $PY scripts/tech_moves.py work/analysis.json work/tech.json [--from-t 秒]
 - **DICT.md**（工作区根目录）：线路/人名、口播术语、「纠错映射」（错词 => 正词，
   随视频沉淀、跨视频复用；视频专属词只进该视频 work/fixes_*.json）、
   「转录 initial-prompt」
-- **三层纠错**：L1 transcribe --dict 喂解码器词汇提示；L2 caption_fix --dict
-  应用同音词典+纠错映射；L3 caption_llm（GLM，key 从 `--api-key`/
-  `$ZHIPUAI_API_KEY`/工作区或技能根 `.env` 的 `ZHIPUAI_API_KEY=` 自动读取，
-  占位符忽略）做剩余错别字，difflib≥0.8 改写守卫、时间轴永不动
-- **字幕断句双门禁**：词内绝不拆分（只按词元切+语气词回溯，单测守护）；
-  停顿 ≥0.30s 加逗号、句末（≥0.55s 或段尾）加句号
+- **三层纠错**：L1 transcribe --dict（funasr 热词 / whisper initial_prompt）；
+  L2 caption_fix --dict 应用同音词典+纠错映射；L3 caption_llm（GLM，key 从
+  `--api-key`/`$ZHIPUAI_API_KEY`/工作区或技能根 `.env` 的 `ZHIPUAI_API_KEY=`
+  自动读取，占位符忽略）做剩余错别字，**五道确定性门禁**（相似度≥0.8 /
+  防删除覆盖 / 拉丁词白名单 / 语速≤12字每秒 / 索引有效）、时间轴永不动
+- **字幕断句（course-subtitles 契约）**：词内绝不拆分（单测守护）；ASR 自带
+  标点**保留并驱动断句**（句末标点必断、逗号在宽度≥10 且真停顿或宽度≥20 时
+  断、强切回溯最近逗号）；无标点流（whisper）回退停顿合成标点；显示宽度
+  口径 CJK=1/拉丁=0.5，硬上限宽度 20/时长 7s；相邻拉丁词补空格、单字符
+  拉丁碎片双向拼回、同词三连口吃折叠
 - 技术动作检测器（14 个相位/事件 + 不检测清单 + 调参纪律）见
   [TECHNIQUES.md](references/TECHNIQUES.md)
 - **讲解片成片 / 难点插剪**（说明片段剪进主线强调难点）见

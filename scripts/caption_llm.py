@@ -48,24 +48,50 @@ def load_dict(dict_path):
     return lines
 
 
-def apply_corrections(captions, fixes, min_ratio=0.8):
-    """Pure: apply {"i": idx, "text": new} fixes with a rewrite guard.
+def apply_corrections(captions, fixes, min_ratio=0.8, min_cover=0.88,
+                      max_cps=12.0, whitelist=None):
+    """Pure: apply {"i": idx, "text": new} fixes through five deterministic
+    gates (course-subtitles v1.7 contract). Timing fields are never touched;
+    highlights (terms) are recomputed for changed lines.
 
-    Timing fields are never touched; highlights (terms) are recomputed for
-    changed lines with caption_fix.find_terms.
+    Gates per fix:
+    1. similarity  - difflib ratio >= min_ratio (no sentence rewrites)
+    2. coverage    - anti-deletion: shrinkage <=20%, >=75% chars kept
+                     (word-by-word proofreading changes chars, never deletes)
+    3. whitelist   - latin tokens in the new text must come from the original
+                     line or the dictionary (the model may not invent terms)
+    4. speed       - <= max_cps chars/sec over the caption window (a wildly
+                     longer line cannot fit its slot)
+    5. index       - fixes map onto existing caption indices only
     """
+    import re as _re
     from caption_fix import find_terms
+    whitelist = set(whitelist or ())
     out = [dict(c) for c in captions]
     for fx in fixes:
         i, new = fx.get("i"), fx.get("text")
         if not isinstance(i, int) or not (0 <= i < len(out)) or not new:
-            continue
+            continue                                   # gate 5: index
         old = out[i]["text"]
         new = new.strip()
         if new == old:
             continue
-        if difflib.SequenceMatcher(None, old, new).ratio() < min_ratio:
-            continue  # the model rewrote the sentence: reject, keep original
+        sm = difflib.SequenceMatcher(None, old, new)
+        if sm.ratio() < min_ratio:                     # gate 1: similarity
+            continue
+        kept = sum(b.size for b in sm.get_matching_blocks())
+        # gate 2: coverage = anti-deletion. Substitution proofreading keeps
+        # the length; single-char fixes in short lines must pass. Reject
+        # shrinkage >20% or lines losing >25% of their chars.
+        if len(new) < len(old) * 0.8 or kept / max(len(old), 1) < 0.75:
+            continue
+        tok_re = r"[A-Za-z][A-Za-z0-9.+#'-]*"
+        allowed = whitelist | set(_re.findall(tok_re, old))
+        if any(tok not in allowed for tok in _re.findall(tok_re, new)):
+            continue                                   # gate 3: whitelist
+        dur = max(out[i]["end"] - out[i]["start"], 0.1)
+        if len(new) / dur > max_cps:                   # gate 4: speed
+            continue
         out[i]["text"] = new
         out[i]["terms"] = [{"term": t, "off": a} for a, b, t in find_terms(new)]
     return out

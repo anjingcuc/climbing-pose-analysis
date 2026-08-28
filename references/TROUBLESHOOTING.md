@@ -42,6 +42,16 @@
   协议镜像不认，加 `HF_HUB_DISABLE_XET=1`；模型一律 `HF_ENDPOINT=https://hf-mirror.com`
 - **yolo 权重下载**：GitHub 直连不通用 `https://gh-proxy.com/` 前缀；
   装完 `torch.load` 验证 kpt_shape=[17,3]（yolo11x-pose.pt = 118,481,010 字节）
+- **FunASR 依赖与坑**：`pip install funasr jieba`（必须同命令钉
+  `"torch==2.6.0+cu124"` 防解析器升级）；首次运行 modelscope 下载约 1GB
+  （国内直连）。**funasr 词级时间戳在连续语音上累积漂移 ≈-3s/min**
+  （实测 285s 处 -17s）——transcribe.py 默认双引擎：funasr 出文本+标点+热词，
+  whisper 同音频出时间轴，asr_align 锚点 warp 修正；warp 的尾锚只在两流
+  内容对齐到末尾时才可信（whisper 幻觉尾会把整段时间轴拉歪，已按
+  最后匹配块覆盖度判定）。症状：字幕越来越超前/落后音频
+- **whisper 幻觉尾**：长静音段后 whisper 常输出循环重复文本（实测一条
+  5min 视频尾部多出 ~13s 假词）；锚点 warp 的尾锚守卫已处理，
+  `--engine whisper` 纯路线需靠 caption 时间轴或人工截尾
 - **环境残留代理拒绝连接**（如 127.0.0.1 端口不通）：pip 加 `NO_PROXY='*'`
 
 ## 渲染/管线坑
