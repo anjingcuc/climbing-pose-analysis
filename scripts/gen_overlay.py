@@ -40,6 +40,25 @@ def probe_display_size(video_path):
     return BASE_W, BASE_H
 
 
+def probe_video_encoder():
+    """Prefer NVENC (h264_nvenc, ~10x faster on 4K segment cuts); fall back
+    to libx264 when the GPU/driver lacks it (measured: driver 595.79 has
+    nvenc API 13.0 while ffmpeg 9.0 needs 13.1). Returns (codec, flags)."""
+    import subprocess
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i",
+             "testsrc2=duration=0.3:size=320x180",
+             "-c:v", "h264_nvenc", "-f", "null", "-"],
+            capture_output=True, timeout=30)
+        if r.returncode == 0:
+            return "h264_nvenc", ["-preset", "p6", "-rc", "vbr", "-cq", "18",
+                                  "-b:v", "0"]
+    except Exception:
+        pass
+    return "libx264", ["-preset", "fast", "-crf", "18"]
+
+
 def pick_segment(frames, fps, max_s=0.0):
     """[0, end] where end follows the longest climbing run (+1.5s pad).
 
@@ -501,10 +520,12 @@ def main():
     # Dense keyframes (-g 30): hyperframes seeks the DOM video per captured
     # frame; sparse GOPs (x264 default 250f) stall 4K captures indefinitely.
     seg_mp4 = out_dir / "segment.mp4"
+    vcodec, vflags = probe_video_encoder()
+    print(f"segment encode: {vcodec}")
     sub_run([
         "ffmpeg", "-y", "-v", "error", "-ss", f"{a/fps:.3f}", "-i", str(args.video),
-        "-t", f"{dur:.3f}", "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-        "-g", "30", "-keyint_min", "30", "-sc_threshold", "0",
+        "-t", f"{dur:.3f}", "-c:v", vcodec, *vflags,
+        "-g", "30", "-keyint_min", "30",
         "-movflags", "+faststart",
         "-c:a", "aac", "-b:a", "128k", str(seg_mp4)])
 

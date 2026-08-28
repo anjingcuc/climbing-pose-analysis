@@ -52,6 +52,10 @@
 - **whisper 幻觉尾**：长静音段后 whisper 常输出循环重复文本（实测一条
   5min 视频尾部多出 ~13s 假词）；锚点 warp 的尾锚守卫已处理，
   `--engine whisper` 纯路线需靠 caption 时间轴或人工截尾
+- **NVENC 不可用（API version 报错）**：ffmpeg 9.0 的 h264_nvenc 要求
+  nvenc API 13.1（驱动 ≥610.00）；旧驱动（如 595.79=API 13.0）探测即失败。
+  gen_overlay 切片与 hyperframes `render --gpu` 都已做自动探测回退，
+  升级驱动后无需改代码自动启用
 - **环境残留代理拒绝连接**（如 127.0.0.1 端口不通）：pip 加 `NO_PROXY='*'`
 
 ## 渲染/管线坑

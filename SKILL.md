@@ -149,7 +149,9 @@ index.html**。（历史教训：规则只写在一条产线里导致另一产�
   （`detect_contacts` 返回的 speed），`--on-t ≈ 1.4×噪声底`；用 debug_render/
   抽帧目检接触圈贴合真实踩点，再对照口播时间戳复核
 - 事件阈值：位移 >0.20 身位、破接触前 ≥6/8 帧接触、单段最多 60 条
-- 渲染质量：draft 迭代、high 交付；gsap 可离线：放 `workspace/gsap.min.js`
+- 渲染质量：draft 迭代、high 交付；渲染始终带 `--gpu`（encode 走 NVENC，
+  自带探测、失败自动回退 CPU——驱动 ≥610 才真正生效；capture 的 browser-gpu
+  本就自动探测）；gsap 可离线：放 `workspace/gsap.min.js`
   （gen_overlay 自动拷贝，缺失回退 CDN）
 
 ## 8. 工程纪律与 LLM 参与最小化
