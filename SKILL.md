@@ -17,6 +17,7 @@ description: 对固定机位攀岩/抱石视频做本地 GPU 姿态追踪与生�
 | conda env | `python -c "import torch;print(torch.cuda.is_available())"` | Python 3.11 + `torch==2.6.0+cu124` + `ultralytics` + `scipy` + `opencv-python` + `pytest` |
 | ffmpeg | `ffmpeg -version` | 切片/抽帧/转码 |
 | Node ≥22 | `node --version` | hyperframes CLI |
+| funasr + jieba | `python -c "import funasr, jieba"` | 字幕管线（v3 默认引擎）；与 torch 同命令安装钉版本 |
 
 pip 镜像（中国网络）：torch 走 `-f https://mirrors.aliyun.com/pytorch-wheels/cu124/`
 （单线程慢 → 并发分段下载，见 TROUBLESHOOTING.md），其余走清华 PyPI。
@@ -83,23 +84,14 @@ $PY scripts/tech_moves.py work/analysis.json work/tech.json [--from-t 秒]
 - **DICT.md**（工作区根目录）：线路/人名、口播术语、「纠错映射」（错词 => 正词，
   随视频沉淀、跨视频复用；视频专属词只进该视频 work/fixes_*.json）、
   「转录 initial-prompt」
-- **三层纠错**：L1 transcribe --dict（funasr 热词 / whisper initial_prompt）；
-  L2 caption_fix --dict 应用同音词典+纠错映射；L3 caption_llm（GLM，key 从
-  `--api-key`/`$ZHIPUAI_API_KEY`/工作区或技能根 `.env` 的 `ZHIPUAI_API_KEY=`
-  自动读取，占位符忽略）做剩余错别字，**五道确定性门禁**（相似度≥0.8 /
-  防删除覆盖 / 拉丁词白名单 / 语速≤12字每秒 / 索引有效）、时间轴永不动
-- **字幕断句（course-subtitles 契约，2026-08-29 修订标点保留）**：词内绝不
-  拆分（单测守护）；ASR 标点**全程保留**——微碎句合并时逗号不删（删除逗号
-  曾把每个合并边界的真实句读剥掉，即"字幕丢标点"的根因）、句尾降级为逗号、
-  词中伪迹由跨界剥离层按成词判定移除；断句由标点驱动（句末必断、逗号在
-  宽度≥10 且真停顿或宽度≥20 时断、强切回溯最近逗号）；每行以标点收尾
-  （句末 。，续行 ，）；无标点流（whisper）回退停顿合成；显示宽度口径
-  CJK=1/拉丁=0.5，硬上限宽度 20/时长 7s；相邻拉丁词补空格、单字符拉丁
-  碎片双向拼回、同词三连口吃折叠
-- 技术动作检测器（14 个相位/事件 + 不检测清单 + 调参纪律）见
-  [TECHNIQUES.md](references/TECHNIQUES.md)
-- **讲解片成片 / 难点插剪**（说明片段剪进主线强调难点）见
-  [TUTORIAL.md](references/TUTORIAL.md)
+- **三层纠错**：L1 热词（识别时纠正）→ L2 同音词典+纠错映射 → L3 可选
+  GLM 纠错（五道确定性门禁，无 key 自动跳过）；时间轴永不动
+- **断句与标点**（course-subtitles 契约，2026-08-29 修订）：词内绝不拆分；
+  ASR 标点全程保留并驱动断句；每行以标点收尾
+- 字幕管线的完整契约（五道门禁、标点保留细节、时间轴 warp、DICT 格式）
+  见 [CAPTIONS.md](references/CAPTIONS.md)；技术动作检测器（14 个 +
+  调参纪律）见 [TECHNIQUES.md](references/TECHNIQUES.md)；
+  讲解片成片 / 难点插剪见 [TUTORIAL.md](references/TUTORIAL.md)
 
 ## 5. 视觉规范（用户已确认的默认，两产线统一遵守，勿退回）
 
@@ -151,7 +143,8 @@ index.html**。（历史教训：规则只写在一条产线里导致另一产�
 ## 7. 参数速查
 
 - `--seg a:b`：手动片段帧区间；默认起点=第 0 帧，终点=最长攀爬段结束 +1.5s
-- `--max-seg-s`（默认 0=不封顶）：总时长上限（从尾部截短）；4K 渲染约 1.6min/75s
+- `--max-seg-s`（默认 0=不封顶）：总时长上限（从尾部截短）；4K 渲染耗时
+  参考：NVENC 约 5.5s/秒影片（292s 片 26min），无 NVENC 约 10s/秒影片
 - `--tech tech.json` / `--captions captions.json`（gen_overlay）：技术动作数据（面板/小结卡） / 语音字幕层
 - **接触阈值 on_t 校准（人物小/噪声大时必做）**：测静止期手脚 p25 速度
   （`detect_contacts` 返回的 speed），`--on-t ≈ 1.4×噪声底`；用 debug_render/

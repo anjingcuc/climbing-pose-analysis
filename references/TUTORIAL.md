@@ -12,7 +12,7 @@
 PY=<conda env python>
 # S1 转录（whisperX large-v3 GPU；首次需 nltk punkt 与 HF 镜像，见 TROUBLESHOOTING.md）
 $PY scripts/transcribe.py <video> -o work/words.json --dict DICT.md
-# S2 字幕：词边界断句 + 停顿标点 + DICT 纠错映射 + 高亮（产物 SRT+JSON）
+# S2 字幕：词边界断句 + 标点保留 + DICT 纠错映射 + 高亮（产物 SRT+JSON）
 $PY scripts/caption_fix.py work/words.json -o work/captions.srt --json work/captions.json --dict DICT.md
 # S3 姿态与分析同主产线（全片提取），技术检测只跑演示段
 $PY scripts/tech_moves.py work/analysis.json work/tech.json --from-t <演示开始秒>

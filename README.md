@@ -21,7 +21,8 @@
   锚点 warp 修正 FunASR 的时间戳漂移；词边界断句、标点保留契约、同音
   纠错词典（DICT.md）、可选 LLM 纠错（五道确定性门禁）
 - **克制的视觉标注**（让位于攀岩者）：低透明度骨架与支撑三角、三点平衡
-  接触圈、重心光晕、底部支撑点面板；无跟随徽章、无关节角度标注
+  接触圈、重心光晕、底部支撑点面板；无跟随徽章、无关节角度标注；
+  重心转移事件条单条最长停留 5s（下一事件到来及时交接）
 - **质量门禁**：pose / analysis 两级 schema 验证 + hyperframes check +
   121 个单元测试（含破坏性注入与真实语料回归契约）
 
@@ -29,7 +30,7 @@
 
 | 依赖 | 说明 |
 |---|---|
-| NVIDIA GPU（CUDA）| 3090 上 5 分钟视频提取约 3 分钟；切片/编码自动探测 NVENC |
+| NVIDIA GPU（CUDA）| 5 分钟视频提取约 3 分钟；切片/编码自动探测 NVENC（4K 成片实测约 5.5s/秒影片）|
 | Python 3.11 | `torch==2.6.0+cu124` + `ultralytics` + `scipy` + `opencv-python` + `funasr` + `jieba` + `pytest` |
 | ffmpeg | 切片/抽帧/转码；NVENC 需驱动 ≥610 |
 | Node.js ≥ 22 | hyperframes CLI（`npx hyperframes@0.8.6`） |
@@ -95,6 +96,7 @@ FunASR 词映射与漂移 warp、LLM 纠错五道门禁、验证器破坏性注�
 ├── scripts/               # 管线脚本（提取/分析/字幕/动作检测/生成/渲染/对齐）
 ├── tests/                 # 121 个单元测试
 └── references/
+    ├── CAPTIONS.md        # 字幕管线完整契约（门禁/标点保留/warp/DICT）
     ├── TECHNIQUES.md      # 技术动作检测器阈值与依据
     ├── TROUBLESHOOTING.md # 环境坑 + 门禁失败处置（按症状查表）
     └── TUTORIAL.md        # 讲解片产线 + 难点插剪
