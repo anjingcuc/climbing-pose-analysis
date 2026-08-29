@@ -313,11 +313,13 @@ def resegment(words, max_w=20.0, gap_s=0.9, dur_max=7.0, sentence_gap=0.55):
         if has_asr_punct:
             text = _join_chunk(chunk)
             if not text.endswith(_PUNCT_TAIL):
+                # every line closes with punctuation (user 2026-08-29:
+                # bare continuation ends read as lost punctuation);
+                # sentence end -> 。, any continuation -> ，
                 if nxt_gap is None or nxt_gap >= sentence_gap:
                     text += "。"
-                elif nxt_gap >= 0.30:
+                else:
                     text += "，"
-                # else: hard-cap continuation - no synthetic punctuation
         else:
             trailing = "。" if (nxt_gap is None or nxt_gap >= sentence_gap) else "，"
             text = _punctuate(chunk, trailing)

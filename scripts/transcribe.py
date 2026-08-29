@@ -73,7 +73,16 @@ def _merge_micro_sentences(sents):
                        (ts and merged[-1]["timestamp"] and
                         ts[0][0] - merged[-1]["timestamp"][-1][1] < 200)):
             prev = merged[-1]
-            prev["text"] = prev["text"].rstrip("，。、！？；") + text
+            # punctuation-retention (course-subtitles contract): a merge
+            # means the sentence continues, so commas STAY (deleting them
+            # stripped real clause punctuation from every merged boundary -
+            # the bug behind "subtitles lost their punctuation"); sentence
+            # tails downgrade to a comma; mid-word artifact tails are
+            # removed later by strip_cross_boundary_punct at caption time
+            pt = prev["text"].rstrip()
+            if pt and pt[-1] in "。！？；;":
+                pt = pt[:-1] + "，"
+            prev["text"] = pt + text
             prev["timestamp"] = prev["timestamp"] + ts
         else:
             merged.append({"text": text, "timestamp": list(ts)})

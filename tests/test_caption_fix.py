@@ -230,18 +230,25 @@ def test_group_units_no_doubled_punctuation():
     assert "。。" not in joined and joined.count("。") == 1
 
 
-def test_merge_micro_sentences_strips_fragment_punct():
-    """funasr micro-fragments get ct-punc tails at MID-WORD boundaries
-    (这应。|该是) - merging must strip the fragment tail punctuation."""
+def test_merge_micro_sentences_keeps_commas_downgrades_tails():
+    """Punctuation-retention on merge (course-subtitles contract): commas
+    survive (deleting them stripped real clause punctuation from every
+    merged boundary), sentence tails downgrade to a comma; the mid-word
+    artifact (这应。|该是) is removed later at word level by
+    strip_cross_boundary_punct, not here."""
     from transcribe import _merge_micro_sentences
-    sents = [{"text": "平衡刹然后这应。", "timestamp": [[0, 500], [500, 900]]},
-             {"text": "该是上左脚还是上右手呢。", "timestamp": [[900, 1500]]},
-             {"text": "我们上右手吧。", "timestamp": [[1500, 1900], [1900, 2200]]}]
+    sents = [{"text": "到这儿，", "timestamp": [[0, 400]]},
+             {"text": "大包大pinch啊。", "timestamp": [[420, 900]]},
+             {"text": "平衡刹然后这应。", "timestamp": [[900, 1500]]},
+             {"text": "该是上左脚呢。", "timestamp": [[1520, 1900]]}]
     out = _merge_micro_sentences(sents)
     joined = "".join(s["text"] for s in out)
-    assert "这应。该" not in joined
-    assert "应该是" in joined                      # mid-word punct removed
-    assert "上右手呢。我们" in joined or "呢" in joined
+    assert "到这儿，大包" in joined                 # real comma survived
+    assert "啊。平衡" not in joined                 # sentence tail downgraded
+    assert "啊，平衡" in joined
+    # mid-word artifact tail survives merge as a comma - removed at the
+    # word level (strip_cross_boundary_punct) where 应+该 is detectable
+    assert "这应，该是" in joined or "这应。该是" in joined
 
 
 def test_strip_cross_boundary_punct_removes_fragment_artifacts():

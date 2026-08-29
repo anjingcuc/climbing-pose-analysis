@@ -140,7 +140,8 @@ def fmt_events(seg_frames, events, fps, off_i, cap=60, min_cap_dur=0.5):
 
     out = []
     for k, (e, t0, t1) in enumerate(kept):
-        cap_dur = min(e["dur"], 3.2)
+        cap_dur = min(e["dur"], 5.0)   # linger (user: readers need time);
+        # the handoff clamp below still cuts it short for the next event
         if k + 1 < len(kept):  # hand off cleanly before the next caption
             cap_dur = min(cap_dur, kept[k + 1][1] - t0 - 1.65)
         out.append((dict(e, cap_dur=round(max(cap_dur, min_cap_dur), 2)), t0, t1))
